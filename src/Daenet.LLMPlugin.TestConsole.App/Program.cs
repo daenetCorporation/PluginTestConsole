@@ -101,7 +101,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
         private static void UseSemanticSearchApi(IConfiguration configuration, ServiceCollection serviceCollection)
         {
             //
-            SearchApi.UseSemantSearchApi(configuration, serviceCollection);
+           // SearchApi.UseSemantSearchApi(configuration, serviceCollection);
         }
 
     }
