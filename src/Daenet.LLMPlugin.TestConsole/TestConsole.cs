@@ -15,43 +15,52 @@ namespace Daenet.LLMPlugin.TestConsole
         private readonly TestConsoleConfig _consoleCfg;
         private readonly ILogger<TestConsole> _logger;
         private readonly PluginManager _pluginMgr;
-        private readonly IServiceCollection _svcCollection;
+        
+        private static Kernel? _kernel;
 
-        public TestConsole(TestConsoleConfig cfg, PluginManager pluginMgr, ILogger<TestConsole> logger, IServiceCollection svcCollection)
+        public TestConsole(TestConsoleConfig cfg, PluginManager pluginMgr, ILogger<TestConsole> logger)
         {
             _consoleCfg = cfg;
             _logger = logger;
             _pluginMgr = pluginMgr;
-            _svcCollection = svcCollection;
+        }
+
+        /// <summary>
+        /// Initializes the singleton instance of the Semantic kernel for DI.
+        /// </summary>
+        /// <param name="svcCollection"></param>
+        public static void UseSemantikKernel(IServiceCollection svcCollection)
+        {
+            _kernel = GetKernel();
+
+            if (svcCollection != null)
+                svcCollection.AddSingleton(_kernel);
         }
 
         /// <summary>
         /// Loads all plugins and runs the chatbot conversation.
         /// </summary>
-        /// <param name="args"></param>
+        /// In this case plugins are initialized with the kernel instance.</param>
         /// <returns></returns>
         public async Task RunAsync()
         {
             var clr = ConsoleColor.White;
             Console.ForegroundColor = clr;
 
+            if(_kernel == null)
+                _kernel = GetKernel();
+
             Console.WriteLine("CPDM Plugin Test Console started ...");
-
-            var kernel = GetKernel();
-
-            //var svcProvider = svcCollection.BuildServiceProvider();
-
-            //var logger = svcProvider.GetService<ILogger<TestConsole>>();
 
             // Create chat history
             var history = new ChatHistory();
 
             history.AddSystemMessage(_consoleCfg.SystemMessage);
 
-            ImportPlugins(kernel, history);
+            ImportPlugins(_kernel, history);
 
             // Get chat completion service
-            var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
+            var chatCompletionService = _kernel.GetRequiredService<IChatCompletionService>();
 
             string? userInput;
 
@@ -80,7 +89,7 @@ namespace Daenet.LLMPlugin.TestConsole
                     result = await chatCompletionService.GetChatMessageContentAsync(
                         history,
                         executionSettings: openAIPromptExecutionSettings,
-                        kernel: kernel);
+                        kernel: _kernel);
 
                     Console.ForegroundColor = _consoleCfg.AssistentMessageColor;
 

@@ -44,19 +44,22 @@ namespace Daenet.LLMPlugin.TestConsole.App
 
             UseSemanticSearchApi(cfg, serviceCollection);
 
+
+           // Creates the instance of Semantic kernel and register it for DI.
+            // This is required if there is at least a single plugin, which requires Semantik Kernel.
+            TestConsole.UseSemantikKernel(serviceCollection);
+
+
             // Build the service provider.
             var serviceProvider = serviceCollection.BuildServiceProvider();
-
-           
-            //ActivatorUtilities.CreateInstance(serviceProvider, typeof(SearchApi));
-
-            var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
-            
-            logger.LogInformation("Application running...");
 
             // Get an instance of TestConsole from the service provider.
             var testConsole = serviceProvider.GetRequiredService<TestConsole>();
 
+            var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
+            
+            logger.LogInformation("Application running...");
+            
             // Call the RunAsync method on the TestConsole instance.
             await testConsole.RunAsync();
         }
