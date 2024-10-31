@@ -23,6 +23,12 @@ namespace Daenet.LLMPlugin.TestConsole
         /// </summary>
         public string SystemPrompt { get; set; } = "User > ";
 
+
+        /// <summary>
+        /// The system message.
+        /// </summary>
+        public string SystemMessage { get; set; } = String.Empty;
+
         /// <summary>
         /// The assistent output color.
         /// </summary>

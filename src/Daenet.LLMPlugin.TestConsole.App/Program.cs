@@ -33,7 +33,8 @@ namespace Daenet.LLMPlugin.TestConsole.App
             serviceCollection.AddSingleton<PluginManager>();
 
             // Register TestConsoleConfig with the dependency injection container.
-            serviceCollection.AddSingleton<TestConsoleConfig>(new TestConsoleConfig() { SystemPrompt = "-> " });
+            serviceCollection.AddSingleton<TestConsoleConfig>(new TestConsoleConfig()
+            { SystemPrompt = "-> " , SystemMessage = $"You are the agent who provide informaiton for user's intent and invoke plugin functions. Today is {DateTime.Now}."});
 
             // Register the configuration of the built-in plugin.
             serviceCollection.AddSingleton<TestConsole>();
@@ -101,7 +102,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
         private static void UseSemanticSearchApi(IConfiguration configuration, ServiceCollection serviceCollection)
         {
             //
-           // SearchApi.UseSemantSearchApi(configuration, serviceCollection);
+            SearchApi.UseSemantSearchApi(configuration, serviceCollection);
         }
 
     }

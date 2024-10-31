@@ -15,12 +15,14 @@ namespace Daenet.LLMPlugin.TestConsole
         private readonly TestConsoleConfig _consoleCfg;
         private readonly ILogger<TestConsole> _logger;
         private readonly PluginManager _pluginMgr;
+        private readonly IServiceCollection _svcCollection;
 
-        public TestConsole(TestConsoleConfig cfg, PluginManager pluginMgr, ILogger<TestConsole> logger)
+        public TestConsole(TestConsoleConfig cfg, PluginManager pluginMgr, ILogger<TestConsole> logger, IServiceCollection svcCollection)
         {
             _consoleCfg = cfg;
             _logger = logger;
             _pluginMgr = pluginMgr;
+            _svcCollection = svcCollection;
         }
 
         /// <summary>
@@ -43,6 +45,8 @@ namespace Daenet.LLMPlugin.TestConsole
 
             // Create chat history
             var history = new ChatHistory();
+
+            history.AddSystemMessage(_consoleCfg.SystemMessage);
 
             ImportPlugins(kernel, history);
 
@@ -91,6 +95,7 @@ namespace Daenet.LLMPlugin.TestConsole
                     if (history.FirstOrDefault(m => (m.Content == null ? String.Empty : m.Content).ToString().Contains("Started the new conversation")) != null)
                     {
                         history.Clear();
+                        history.AddSystemMessage(_consoleCfg.SystemMessage);
                     }
                     else
                     {
