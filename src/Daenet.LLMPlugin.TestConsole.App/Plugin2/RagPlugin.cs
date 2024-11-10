@@ -1,5 +1,4 @@
-﻿using Daenet.EmbeddingSearchApi.Interfaces;
-using Daenet.EmbeddingSearchApi.Services;
+﻿
 using Microsoft.SemanticKernel;
 using System;
 using System.Collections.Generic;
@@ -14,12 +13,12 @@ namespace Daenet.LLMPlugin.TestConsole.App.Plugin2
     public class RagPlugin
     {
         private readonly RagPluginConfig _config;
-        private readonly ISearchApi _sApi;
+        //private readonly ISearchApi _sApi;
 
-        public RagPlugin(RagPluginConfig config, ISearchApi searchApi, Kernel kernel)
+        public RagPlugin(RagPluginConfig config/*, ISearchApi searchApi*/, Kernel kernel)
         {
             _config = config;
-            _sApi = searchApi;
+           // _sApi = searchApi;
         }
 
         [KernelFunction]

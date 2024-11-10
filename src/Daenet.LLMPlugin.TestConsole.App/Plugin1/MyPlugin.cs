@@ -34,6 +34,7 @@ namespace Daenet.LLMPlugin.TestConsole.App.Plugin1
                 {
                     sb.AppendLine($"Proces ID: {proc.Id}"); ;
                     sb.AppendLine($"Proces working set: {proc.WorkingSet64}");
+                   //sb.Append($"Working directory or local path: {proc.StartInfo.WorkingDirectory}");
                     sb.AppendLine("---------------------------------------------");
                 }
             }

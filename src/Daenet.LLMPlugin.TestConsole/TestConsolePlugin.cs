@@ -112,5 +112,19 @@ namespace Daenet.LLMPlugin.TestConsole
         {
             _config.SystemPrompt = promptText;
         }
+
+        [KernelFunction]
+        [Description("Get environment variables.")]
+        public string GetEnvironmentVariables()
+        {
+            StringBuilder sb = new StringBuilder();
+            var vars = Environment.GetEnvironmentVariables();
+            foreach (var key in vars.Keys)
+            {
+                sb.AppendLine($"{key} - {vars[key]}");
+            }
+
+            return sb.ToString();
+        }
     }
 }

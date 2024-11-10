@@ -1,0 +1,18 @@
+{
+  "profiles": {
+    "Daenet.PluginTestConsole.App": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "OPENAI_CHATCOMPLETION_DEPLOYMENT": "gpt-4o",
+        "OPENAI_EMBEDDING_DEPLOYMENT": "TestingEmbeddings",
+        "OPENAI_API_KEY": "",
+        "OPENAI_ORGID": "",
+
+        "-AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "",
+        "-AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT": "gpt-4o",
+        "-AZURE_OPENAI_ENDPOINT": "https://***.openai.azure.com/",
+        "-AZURE_OPENAI_API_KEY": "***"
+      }
+    }
+  }
+}

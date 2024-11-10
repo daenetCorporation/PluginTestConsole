@@ -1,4 +1,4 @@
-﻿using Daenet.EmbeddingSearchApi.Services;
+﻿
 using Daenet.LLMPlugin.Common;
 using Daenet.LLMPlugin.TestConsole;
 using Microsoft.Extensions.Configuration;
@@ -44,11 +44,9 @@ namespace Daenet.LLMPlugin.TestConsole.App
 
             UseSemanticSearchApi(cfg, serviceCollection);
 
-
            // Creates the instance of Semantic kernel and register it for DI.
             // This is required if there is at least a single plugin, which requires Semantik Kernel.
             TestConsole.UseSemantikKernel(serviceCollection);
-
 
             // Build the service provider.
             var serviceProvider = serviceCollection.BuildServiceProvider();
@@ -108,7 +106,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
         private static void UseSemanticSearchApi(IConfiguration configuration, ServiceCollection serviceCollection)
         {
             //
-            SearchApi.UseSemantSearchApi(configuration, serviceCollection);
+            //SearchApi.UseSemantSearchApi(configuration, serviceCollection);
         }
 
     }

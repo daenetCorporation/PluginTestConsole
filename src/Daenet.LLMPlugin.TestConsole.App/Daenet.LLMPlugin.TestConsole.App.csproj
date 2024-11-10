@@ -13,7 +13,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\..\..\daenet\openai-prompts\src\Daenet.SemanticSearchService\Daenet.EmbeddingSearchApi\Daenet.EmbeddingSearchApi.Api.csproj" />
 		<ProjectReference Include="..\Daenet.LLMPlugin.Common\Daenet.LLMPlugin.Common.csproj" />
 		<ProjectReference Include="..\Daenet.LLMPlugin.TestConsole\Daenet.LLMPlugin.TestConsole.csproj" />
 	</ItemGroup>
