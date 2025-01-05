@@ -407,3 +407,4 @@ FodyWeavers.xsd
 /src/Daenet.LLMPlugin.TestConsole.App/appsettings - EMPTY.json
 /src/Daenet.LLMPlugin.TestConsole.App/appsettings - WITH SECRETS.json
 /src/Daenet.LLMPlugin.TestConsole.App/Properties/launchSettingProd.json
+/src/Daenet.LLMPlugin.TestConsole.App/Properties/launchSettingsEmpty.json

@@ -4,7 +4,7 @@
       "commandName": "Project",
       "environmentVariables": {
         "OPENAI_CHATCOMPLETION_DEPLOYMENT": "gpt-4o",
-        "OPENAI_EMBEDDING_DEPLOYMENT": "TestingEmbeddings",
+        "OPENAI_EMBEDDING_DEPLOYMENT": "",
         "OPENAI_API_KEY": "",
         "OPENAI_ORGID": "",
 
