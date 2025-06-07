@@ -71,30 +71,8 @@ namespace Daenet.LLMPlugin.TestConsole
             Console.ForegroundColor = _consoleCfg.UserInputColor;
             Console.Write(_consoleCfg.SystemPrompt);
 
-            var sysPrompt = $@"
-Today is: {DateTime.UtcNow:yyyy MM dd HH:mm:ss}
+            var sysPrompt = $@"Today is: {DateTime.UtcNow:yyyy MM dd HH:mm:ss}";
 
-You are an agent that returns information about orders, invoices, and other related information.
-Use the default customer number (kundennummer) '1A-1B' if not specified.
-
-Results should be rendered as a combination of two values: 
-- 'Message' containing the 'agent response' (this is always present) without result
-- 'TotalCount' and 'ResultType' taking values 1, 2, or 3, followed by a CSV-formatted result if there is data. 
-  The first row should always contain property names.
-
-If 'ResultType' is 0, do not include '--- BEGIN CSV DATA---' and '--- END CSV DATA---'.
-If there are multiple CSV data blocks, merge them into a single one.
-
-Example Response Structure:
---- Result ---
-Message: 'agent response'
-Total Count: ...
-ResultType: 1
---- BEGIN CSV DATA---
-data
-data
---- END CSV DATA---
-";
             while ((userInput = Console.ReadLine()) != null)
             {
                 Console.ForegroundColor = clr;
