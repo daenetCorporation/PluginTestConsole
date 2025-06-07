@@ -5,6 +5,7 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using Daenet.LLMPlugin.Common;
+using System.Diagnostics;
 
 namespace Daenet.LLMPlugin.TestConsole
 {
@@ -44,6 +45,8 @@ namespace Daenet.LLMPlugin.TestConsole
         /// <returns></returns>
         public async Task RunAsync()
         {
+            _kernel = null;
+
             var clr = ConsoleColor.White;
             Console.ForegroundColor = clr;
 
@@ -68,6 +71,30 @@ namespace Daenet.LLMPlugin.TestConsole
             Console.ForegroundColor = _consoleCfg.UserInputColor;
             Console.Write(_consoleCfg.SystemPrompt);
 
+            var sysPrompt = $@"
+Today is: {DateTime.UtcNow:yyyy MM dd HH:mm:ss}
+
+You are an agent that returns information about orders, invoices, and other related information.
+Use the default customer number (kundennummer) '1A-1B' if not specified.
+
+Results should be rendered as a combination of two values: 
+- 'Message' containing the 'agent response' (this is always present) without result
+- 'TotalCount' and 'ResultType' taking values 1, 2, or 3, followed by a CSV-formatted result if there is data. 
+  The first row should always contain property names.
+
+If 'ResultType' is 0, do not include '--- BEGIN CSV DATA---' and '--- END CSV DATA---'.
+If there are multiple CSV data blocks, merge them into a single one.
+
+Example Response Structure:
+--- Result ---
+Message: 'agent response'
+Total Count: ...
+ResultType: 1
+--- BEGIN CSV DATA---
+data
+data
+--- END CSV DATA---
+";
             while ((userInput = Console.ReadLine()) != null)
             {
                 Console.ForegroundColor = clr;
@@ -78,7 +105,9 @@ namespace Daenet.LLMPlugin.TestConsole
                 // Enable auto function calling
                 OpenAIPromptExecutionSettings openAIPromptExecutionSettings = new()
                 {
-                    ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions
+                    ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,
+                    Temperature = 0,
+                    ChatSystemPrompt = sysPrompt
                 };
 
                 ChatMessageContent? result = null;
@@ -98,6 +127,8 @@ namespace Daenet.LLMPlugin.TestConsole
 
                     // Add the message from the agent to the chat history
                     history.AddMessage(result.Role, result.Content ?? string.Empty);
+
+                    //break;
                 }
                 catch (Exception ex)
                 {
@@ -256,9 +287,9 @@ namespace Daenet.LLMPlugin.TestConsole
         /// <exception cref="Exception"></exception>
         private static Kernel GetKernel()
         {
-            Kernel? kernel = TryGetOpenAIKernel();
+            Kernel? kernel = TryGetAzureKernel();
             if (kernel == null)
-                kernel = TryGetAzureKernel();
+                kernel = TryGetOpenAIKernel();
 
             if (kernel == null)
                 throw new Exception("No valid kernel found.To initialize the kernel, please see documentation. Requred environment variables must be set.");

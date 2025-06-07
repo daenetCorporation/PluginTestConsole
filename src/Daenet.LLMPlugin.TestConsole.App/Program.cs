@@ -4,6 +4,7 @@ using Daenet.LLMPlugin.TestConsole;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace Daenet.LLMPlugin.TestConsole.App
 {
@@ -57,9 +58,19 @@ namespace Daenet.LLMPlugin.TestConsole.App
             var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
             
             logger.LogInformation("Application running...");
-            
+
+            Stopwatch sw = new Stopwatch();
+
+            while (true)
+            {
+                sw.Restart();
+                await testConsole.RunAsync();
+                sw.Stop();
+
+                Console.WriteLine($"Elapsed time: {sw.ElapsedMilliseconds} ms");
+            }
             // Call the RunAsync method on the TestConsole instance.
-            await testConsole.RunAsync();
+            //await testConsole.RunAsync();
         }
 
         /// <summary>
