@@ -163,7 +163,7 @@ namespace Daenet.LLMPlugin.TestConsole
             {
                 _logger.LogInformation($"MCP Server: {kvp.Key} has {kvp.Value.Count} tools.");
                 kernel.Plugins.AddFromFunctions(kvp.Key, kvp.Value.Select(aiFunction => aiFunction.AsKernelFunction()));
-            }   
+            }
 #pragma warning restore SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 
         }
@@ -243,10 +243,12 @@ namespace Daenet.LLMPlugin.TestConsole
                 Name = GetDefaultMCPServerName(mcpServer),
                 Endpoint = mcpServer.Url!,
                 AdditionalHeaders = new Dictionary<string, string>()
-                {
-
-                }
             };
+
+            if (mcpServer.ApiKey != null)
+            {
+                opts.AdditionalHeaders.Add("ApiKey", mcpServer.ApiKey);
+            }
 
             transport = new SseClientTransport(opts);
             return transport;
