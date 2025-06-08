@@ -1,11 +1,16 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Daenet.LLMPlugin.Common;
+using Daenet.LLMPlugin.TestConsole.Entities;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
-using Daenet.LLMPlugin.Common;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Daenet.LLMPlugin.TestConsole
 {
@@ -16,14 +21,15 @@ namespace Daenet.LLMPlugin.TestConsole
         private readonly TestConsoleConfig _consoleCfg;
         private readonly ILogger<TestConsole> _logger;
         private readonly PluginManager _pluginMgr;
-
+        private readonly McpToolsConfig _mcpToolsCfg;
         private static Kernel? _kernel;
 
-        public TestConsole(TestConsoleConfig cfg, PluginManager pluginMgr, ILogger<TestConsole> logger)
+        public TestConsole(TestConsoleConfig cfg, PluginManager pluginMgr, McpToolsConfig mcpToolsCfg, ILogger<TestConsole> logger)
         {
             _consoleCfg = cfg;
             _logger = logger;
             _pluginMgr = pluginMgr;
+            _mcpToolsCfg = mcpToolsCfg;
         }
 
         /// <summary>
@@ -60,7 +66,7 @@ namespace Daenet.LLMPlugin.TestConsole
 
             history.AddSystemMessage(_consoleCfg.SystemMessage);
 
-            ImportPlugins(_kernel, history);
+            await ImportPlugins(_kernel, history);
 
             // Get chat completion service
             var chatCompletionService = _kernel.GetRequiredService<IChatCompletionService>();
@@ -130,17 +136,8 @@ namespace Daenet.LLMPlugin.TestConsole
             }
         }
 
-        private void ImportPlugins(Kernel kernel, ChatHistory history)
+        private async Task ImportPlugins(Kernel kernel, ChatHistory history)
         {
-
-            // var pluginLib = GetPlugins(_config!);
-
-            ////PluginManager? mgr = ActivatorUtilities.CreateInstance(_svcProvider, typeof(PluginManager), pluginLib) as PluginManager;
-            ////if (mgr == null)
-            ////    throw new NullReferenceException("The PluginManager cannot be created.");
-
-            //var names = pluginLib.Plugins.Select(p => p.Name).ToList();
-
             var pluginInstances = _pluginMgr.CreateRequiredPlugins();
 
             kernel.ImportPluginFromObject(new TestConsolePlugin(kernel, history, _consoleCfg));
@@ -149,114 +146,222 @@ namespace Daenet.LLMPlugin.TestConsole
             {
                 kernel.ImportPluginFromObject(pluginObj);
             }
+
+            await ImportMcpTools(kernel);
         }
 
-
-        /*
-        private static void UseSemantSearchApi(IServiceCollection svcCollection)
+        private async Task ImportMcpTools(Kernel kernel)
         {
-            ILoggerFactory lFact = LoggerFactory.Create(builder =>
+#pragma warning disable SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+
+            if (_mcpToolsCfg == null || _mcpToolsCfg.McpServers == null)
+                return;
+
+            var toolsDict = ListMcpTools();
+
+            foreach (var kvp in await toolsDict)
             {
-                builder.AddDebug();
-            });
+                _logger.LogInformation($"MCP Server: {kvp.Key} has {kvp.Value.Count} tools.");
+                kernel.Plugins.AddFromFunctions(kvp.Key, kvp.Value.Select(aiFunction => aiFunction.AsKernelFunction()));
+            }   
+#pragma warning restore SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 
-            var logger = lFact.CreateLogger<SearchApi>();
-
-            var allowedDataSources = CreateAllowedDataSources(_config!);
-
-            var embeddingIndexDal = CreateEmbeddingIndexDal(_config!, lFact);
-
-            var embeddingGenerator = CreateEmbeddingGenerator(_config!);
-
-            ISimilarityCalculator distanceCalculator = new CosineDistanceCalculator();
-
-            var textConvertors = CreateTextConvertors();
-
-            var blobStorageConfig = GetBlobStorageConfig(_config!);
-
-            IDocumentSplitter documentSplitter = new DocumentSplitter();
-
-            var searchApi = new SearchApi(embeddingGenerator, distanceCalculator, embeddingIndexDal, logger, textConvertors, documentSplitter, worker: null, blobStorageConfig, allowedDataSources);
-
-            svcCollection.AddSingleton<ISearchApi>(searchApi);
         }
 
-
-        private static BlobStorageConfig GetBlobStorageConfig(IConfigurationRoot config)
+        /// <summary>
+        /// Traverse the MCP server configuration, lists all tools available on the MCP servers 
+        /// and returns them to the kernel as kernel plugin tools.
+        /// </summary>
+        /// <returns>The list of imported tools.</returns>
+        /// <exception cref="Exception"></exception>
+        private async Task<Dictionary<string, IList<McpClientTool>>> ListMcpTools()
         {
-            var blobconfig = config.GetSection($"{nameof(BlobStorageConfig)}").Get<BlobStorageConfig>() ?? throw new Exception($"{nameof(BlobStorageConfig)} is missing");
-            return blobconfig;
-        }
+            Dictionary<string, IList<McpClientTool>> dict = new Dictionary<string, IList<McpClientTool>>();
 
-        private static TextConvertors CreateTextConvertors()
-        {
-            TextConvertors cvs = new()
+            IClientTransport? transport = null;
+
+            foreach (var mcpServer in _mcpToolsCfg?.McpServers!)
             {
-                Convertors = new List<ITextConvertor>()
+                transport = GetTransportFromConfiguration(mcpServer);
+
+                try
                 {
-                        new PdfToTextConvertor() , new WordConvertor()
+                    var mcpClient = await McpClientFactory.CreateAsync(transport!);
+
+                    var mcpTools = await mcpClient.ListToolsAsync();
+
+                    dict.Add(mcpServer?.Name ?? $"MCP Server {mcpServer?.Url}", mcpTools);
                 }
-            };
-            return cvs;
-        }
-
-        private static IEmbeddingGenerator CreateEmbeddingGenerator(IConfigurationRoot config)
-        {
-            var openAICfg = config.GetSection("OpenAi").Get<AzureOpenAICfg>() ?? throw new Exception($"{nameof(AzureOpenAICfg)} is missing");
-
-            if (string.IsNullOrEmpty(openAICfg.Key))
-            {
-                throw new Exception($"{nameof(AzureOpenAICfg)} Key is missing");
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Failed to connect to MCP Server: {mcpServer.Name ?? "Name not specified"} - {mcpServer.Url}");
+                    //throw new Exception($"The MCP Server cannot be connected: {mcpServer.Name ?? "Name not specified"} - {mcpServer.Url}");
+                }
             }
 
-            return new AzureOpenAIEmbeddingGenerator(openAICfg);
+            return dict;
         }
 
-        private static IVectorDbClient CreateEmbeddingIndexDal(IConfigurationRoot config, ILoggerFactory loggerFactory)
+        private static IClientTransport GetTransportFromConfiguration(McpServer? mcpServer)
         {
-            IVectorDbClient vectorDbClient = null;
-            var configDal = config.GetSection($"{nameof(QDrantDalConfig)}").Get<QDrantDalConfig>();
-            if (configDal != null)
+            IClientTransport transport;
+            if (!String.IsNullOrEmpty(mcpServer?.Url?.AbsoluteUri))
             {
-                return CreateQdrantDal(config, loggerFactory);
+                transport = GetSseTransport(mcpServer);
+            }
+            else if (!String.IsNullOrEmpty(mcpServer?.Command) && mcpServer?.Arguments != null)
+            {
+                transport = GetStdioTransport(mcpServer);
             }
             else
             {
-                return CreateSqlDal(config, loggerFactory);
+                throw new Exception("MCP server configuration is not valid. Either URL or Command must be set.");
             }
+
+            return transport;
         }
 
-        private static IVectorDbClient CreateSqlDal(IConfigurationRoot config, ILoggerFactory loggerFactory)
+        private static IClientTransport GetStdioTransport(McpServer mcpServer)
         {
-            var sqlCfg = config.GetSection($"{nameof(SqlDalConfig)}").Get<SqlDalConfig>() ?? throw new Exception($"{nameof(SqlDalConfig)} and {nameof(SqlDalConfig)} are missing");
-
-            var logger = loggerFactory.CreateLogger<SqlServerDal>();
-
-            return new SqlServerDal(sqlCfg, logger);
-        }
-
-        private static IVectorDbClient CreateQdrantDal(IConfigurationRoot config, ILoggerFactory loggerFactory)
-        {
-            var qCfg = config.GetSection($"{nameof(QDrantDalConfig)}").Get<QDrantDalConfig>() ?? throw new Exception($"{nameof(QDrantDalConfig)} is missing");
-
-            var logger = loggerFactory.CreateLogger<QDrantClient>();
-
-            return new QDrantClient(qCfg, logger);
-        }
-
-        private static AllowedDataSources? CreateAllowedDataSources(IConfigurationRoot config)
-        {
-            var sec = config.GetSection($"{nameof(AllowedDataSources)}");
-
-            if (sec != null)
+            IClientTransport transport;
+            var opts = new StdioClientTransportOptions
             {
-                AllowedDataSources src = sec.Get<AllowedDataSources>()!;
-                return src;
-            }
+                Name = GetDefaultMCPServerName(mcpServer!),
+                Command = mcpServer?.Command!,
+                Arguments = JsonSerializer.Deserialize<string[]>(mcpServer?.Arguments!),
+            };
 
-            return null;
+            transport = new StdioClientTransport(opts);
+            return transport;
         }
-        */
+
+        private static IClientTransport GetSseTransport(McpServer mcpServer)
+        {
+            IClientTransport transport;
+            SseClientTransportOptions opts = new SseClientTransportOptions
+            {
+                Name = GetDefaultMCPServerName(mcpServer),
+                Endpoint = mcpServer.Url!,
+                AdditionalHeaders = new Dictionary<string, string>()
+                {
+
+                }
+            };
+
+            transport = new SseClientTransport(opts);
+            return transport;
+        }
+
+        private static string GetDefaultMCPServerName(McpServer mcpServer)
+        {
+            return mcpServer.Name ?? $"MCP Server {mcpServer.Url}";
+        }
+
+        /*
+private static void UseSemantSearchApi(IServiceCollection svcCollection)
+{
+   ILoggerFactory lFact = LoggerFactory.Create(builder =>
+   {
+       builder.AddDebug();
+   });
+
+   var logger = lFact.CreateLogger<SearchApi>();
+
+   var allowedDataSources = CreateAllowedDataSources(_config!);
+
+   var embeddingIndexDal = CreateEmbeddingIndexDal(_config!, lFact);
+
+   var embeddingGenerator = CreateEmbeddingGenerator(_config!);
+
+   ISimilarityCalculator distanceCalculator = new CosineDistanceCalculator();
+
+   var textConvertors = CreateTextConvertors();
+
+   var blobStorageConfig = GetBlobStorageConfig(_config!);
+
+   IDocumentSplitter documentSplitter = new DocumentSplitter();
+
+   var searchApi = new SearchApi(embeddingGenerator, distanceCalculator, embeddingIndexDal, logger, textConvertors, documentSplitter, worker: null, blobStorageConfig, allowedDataSources);
+
+   svcCollection.AddSingleton<ISearchApi>(searchApi);
+}
+
+
+private static BlobStorageConfig GetBlobStorageConfig(IConfigurationRoot config)
+{
+   var blobconfig = config.GetSection($"{nameof(BlobStorageConfig)}").Get<BlobStorageConfig>() ?? throw new Exception($"{nameof(BlobStorageConfig)} is missing");
+   return blobconfig;
+}
+
+private static TextConvertors CreateTextConvertors()
+{
+   TextConvertors cvs = new()
+   {
+       Convertors = new List<ITextConvertor>()
+       {
+               new PdfToTextConvertor() , new WordConvertor()
+       }
+   };
+   return cvs;
+}
+
+private static IEmbeddingGenerator CreateEmbeddingGenerator(IConfigurationRoot config)
+{
+   var openAICfg = config.GetSection("OpenAi").Get<AzureOpenAICfg>() ?? throw new Exception($"{nameof(AzureOpenAICfg)} is missing");
+
+   if (string.IsNullOrEmpty(openAICfg.Key))
+   {
+       throw new Exception($"{nameof(AzureOpenAICfg)} Key is missing");
+   }
+
+   return new AzureOpenAIEmbeddingGenerator(openAICfg);
+}
+
+private static IVectorDbClient CreateEmbeddingIndexDal(IConfigurationRoot config, ILoggerFactory loggerFactory)
+{
+   IVectorDbClient vectorDbClient = null;
+   var configDal = config.GetSection($"{nameof(QDrantDalConfig)}").Get<QDrantDalConfig>();
+   if (configDal != null)
+   {
+       return CreateQdrantDal(config, loggerFactory);
+   }
+   else
+   {
+       return CreateSqlDal(config, loggerFactory);
+   }
+}
+
+private static IVectorDbClient CreateSqlDal(IConfigurationRoot config, ILoggerFactory loggerFactory)
+{
+   var sqlCfg = config.GetSection($"{nameof(SqlDalConfig)}").Get<SqlDalConfig>() ?? throw new Exception($"{nameof(SqlDalConfig)} and {nameof(SqlDalConfig)} are missing");
+
+   var logger = loggerFactory.CreateLogger<SqlServerDal>();
+
+   return new SqlServerDal(sqlCfg, logger);
+}
+
+private static IVectorDbClient CreateQdrantDal(IConfigurationRoot config, ILoggerFactory loggerFactory)
+{
+   var qCfg = config.GetSection($"{nameof(QDrantDalConfig)}").Get<QDrantDalConfig>() ?? throw new Exception($"{nameof(QDrantDalConfig)} is missing");
+
+   var logger = loggerFactory.CreateLogger<QDrantClient>();
+
+   return new QDrantClient(qCfg, logger);
+}
+
+private static AllowedDataSources? CreateAllowedDataSources(IConfigurationRoot config)
+{
+   var sec = config.GetSection($"{nameof(AllowedDataSources)}");
+
+   if (sec != null)
+   {
+       AllowedDataSources src = sec.Get<AllowedDataSources>()!;
+       return src;
+   }
+
+   return null;
+}
+*/
 
         /// <summary>
         /// Gets the kernel from environment settings.

@@ -1,6 +1,6 @@
 ﻿
 using Daenet.LLMPlugin.Common;
-using Daenet.LLMPlugin.TestConsole;
+using Daenet.LLMPlugin.TestConsole.Entities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -19,8 +19,13 @@ namespace Daenet.LLMPlugin.TestConsole.App
         {
             var cfg = InitializeConfig(args);
 
+            McpToolsConfig mcpToolsConfig = new McpToolsConfig();
+            cfg.GetSection("McpToolsConfig").Bind(mcpToolsConfig);
+        
             // Set up a service collection for dependency injection.
             var serviceCollection = new ServiceCollection();
+
+            serviceCollection.AddSingleton<McpToolsConfig>(mcpToolsConfig);
 
             // Initializes the logging.
             serviceCollection.AddLogging(configure => configure.AddConsole());

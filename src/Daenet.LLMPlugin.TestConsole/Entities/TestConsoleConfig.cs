@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Daenet.LLMPlugin.TestConsole
+namespace Daenet.LLMPlugin.TestConsole.Entities
 {
     public class TestConsoleConfig
     {
@@ -27,7 +27,7 @@ namespace Daenet.LLMPlugin.TestConsole
         /// <summary>
         /// The system message.
         /// </summary>
-        public string SystemMessage { get; set; } = String.Empty;
+        public string SystemMessage { get; set; } = string.Empty;
 
         /// <summary>
         /// The assistent output color.

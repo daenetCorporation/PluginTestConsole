@@ -1,4 +1,5 @@
-﻿using Microsoft.SemanticKernel;
+﻿using Daenet.LLMPlugin.TestConsole.Entities;
+using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using System;
 using System.Collections.Generic;
