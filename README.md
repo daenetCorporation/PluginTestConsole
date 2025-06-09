@@ -236,6 +236,8 @@ The following example demonstrates how to configure two tools within the McpTool
 
 ~~~
 
+### Using Tools via SSE
+
 The first tool, "DAENET_TEST_MCP_SERVER", is accessible via the MCP SSE protocol.
 
 **Name:**
@@ -246,6 +248,22 @@ Defines the HTTP endpoint where the tool is hosted and listening for requests.
 
 **ApiKey (optional):**
 Provides authentication for the Plugin TestConsole when connecting to the tool. This is currently the only supported authentication mechanism.
+
+### Using Tools via STDIO and npx
+
+The second configuration entry, "Everything", defines a [demo tool](https://github.com/modelcontextprotocol/servers/tree/main/src/everything) that includes a variety of functions to showcase how tools can be implemented.
+
+**Command:**
+Specifies the name of the executable used to launch the tool.
+
+**Arguments:**
+A JSON-serialized object containing the arguments to be passed when running the tool.
+
+In this example, the configuration will result in launching the Everything tool using the following command:
+
+~~~bash
+npx @modelcontextprotocol/server-everything
+~~~
 
 # Call to action
 
