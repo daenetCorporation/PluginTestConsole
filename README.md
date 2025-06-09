@@ -213,7 +213,7 @@ The following example demonstrates how to configure two tools within the McpTool
 {
 
   "Plugins": [
-   . . .
+  
 
   ],
 
@@ -227,7 +227,7 @@ The following example demonstrates how to configure two tools within the McpTool
       {
         "Name": "Everything",
         "Command": "npx",
-        "Arguments": "[\"-y\", \"@modelcontextprotocol/server-everything\"]" // "['-y', '@modelcontextprotocol/server-everything']"//    
+        "Arguments": "[\"-y\", \"@modelcontextprotocol/server-everything\"]"     
       }
     ]
 
@@ -257,9 +257,7 @@ The second configuration entry, "Everything", defines a [demo tool](https://gith
 Specifies the name of the executable used to launch the tool.
 
 **Arguments:**
-A JSON-serialized object containing the arguments to be passed when running the tool.
-
-In this example, the configuration will result in launching the Everything tool using the following command:
+A JSON-serialised object containing the arguments to be passed when running the tool. In this example, the configuration will result in launching the Everything tool using the following command:
 
 ~~~bash
 npx @modelcontextprotocol/server-everything
