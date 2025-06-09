@@ -203,6 +203,49 @@ Examples:
 
 `set prompt to '=>'`
 
+## Model Context Protocol (MCP) Support
+
+The Plugin TestConsole also supports the MCP protocol, enabling the console to test tools hosted on an MCP server. This functionality allows developers to implement plugins as AI tools accessible via the MCP protocol.
+To initialize a tool for use with the Plugin TestConsole, you must define it in the appsettings.json configuration file. 
+The following example demonstrates how to configure two tools within the McpToolsConfig section:
+
+~~~json
+{
+
+  "Plugins": [
+   . . .
+
+  ],
+
+  "McpToolsConfig": {
+    "McpServers": [
+      {
+        "Name": "DAENET_TEST_MCP_SERVER",
+        "Url": "https://localhost:7133/sse",
+        "ApiKey": "54321-edcba-09876-jihgf"
+      },
+      {
+        "Name": "Everything",
+        "Command": "npx",
+        "Arguments": "[\"-y\", \"@modelcontextprotocol/server-everything\"]" // "['-y', '@modelcontextprotocol/server-everything']"//    
+      }
+    ]
+
+  }
+}
+
+~~~
+
+The first tool, "DAENET_TEST_MCP_SERVER", is accessible via the MCP SSE protocol.
+
+**Name:**
+Specifies the identifier of the tool. This value must match the tool name expected by the MCP server.
+
+**Url:**
+Defines the HTTP endpoint where the tool is hosted and listening for requests.
+
+**ApiKey (optional):**
+Provides authentication for the Plugin TestConsole when connecting to the tool. This is currently the only supported authentication mechanism.
 
 # Call to action
 
