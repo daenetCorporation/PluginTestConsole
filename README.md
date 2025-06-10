@@ -262,6 +262,7 @@ A JSON-serialised object containing the arguments to be passed when running the 
 ~~~bash
 npx @modelcontextprotocol/server-everything
 ~~~
+The following figure illustrates the data flow when a user enters the prompt "invoked echo with 'aaaaa'". In this case, the Semantic Kernel takes the prompt from the console (1) and sends it to the model (2). The model has access to a set of defined functions, which consist of SK-Plugins provided by the Test Console and tools imported from MCP Servers. The model sends a response back (3) to the Semantic Kernel with a message marked with the role 'Tool' (not shown in the figure). The Semantic Kernel recognizes that the tool to be invoked is the MCP Tool and acts as a client (4), invoking the tool and processing the result (5), before finally sending the output to the user (6).
 
 # Call to action
 
