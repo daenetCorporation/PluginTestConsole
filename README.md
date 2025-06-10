@@ -1,4 +1,4 @@
-﻿# Large Language Model Plugin TestConsole
+﻿# Large Language Model Plugin TestConsole 
 
 `Daenet.LLMPlugin.TestConsole` is a console library designed for the development and testing of Semantic Kernel plugins. While testing plugins is not a particularly complex task, it requires several repetitive steps such as loading plugins, configuring them, implementing a chat loop, maintaining message history, executing plugin functions, and more. Although these tasks are straightforward, they can become tedious when repeated frequently.
 
