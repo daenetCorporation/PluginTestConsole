@@ -49,5 +49,10 @@ namespace Daenet.LLMPlugin.TestConsole.Entities
         /// </summary>
         public string? ApiKey { get; set; }
 
+        /// <summary>
+        /// Optoinal arguments for the MCP server. If specified the header 'ImpersonatingUser' will be appended to the request with the value of this property.
+        /// </summary>
+        public string? ImpersonatingUser { get; set; }
+
     }
 }

@@ -5,6 +5,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using System.DirectoryServices.AccountManagement;
+using System.Security.Principal;
 
 namespace Daenet.LLMPlugin.TestConsole.App
 {
@@ -14,6 +16,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
         {
             await Sample1(args);
         }
+
 
         private static async Task Sample1(string[] args)
         {
