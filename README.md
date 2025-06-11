@@ -1,4 +1,4 @@
-﻿# Large Language Model Plugin TestConsole
+﻿# Large Language Model Plugin TestConsole 
 
 `Daenet.LLMPlugin.TestConsole` is a console library designed for the development and testing of Semantic Kernel plugins. While testing plugins is not a particularly complex task, it requires several repetitive steps such as loading plugins, configuring them, implementing a chat loop, maintaining message history, executing plugin functions, and more. Although these tasks are straightforward, they can become tedious when repeated frequently.
 
@@ -203,6 +203,68 @@ Examples:
 
 `set prompt to '=>'`
 
+## Model Context Protocol (MCP) Support
+
+The Plugin TestConsole also supports the MCP protocol, enabling the console to test tools hosted on an MCP server. This functionality allows developers to implement plugins as AI tools accessible via the MCP protocol.
+To initialize a tool for use with the Plugin TestConsole, you must define it in the appsettings.json configuration file. 
+The following example demonstrates how to configure two tools within the McpToolsConfig section:
+
+~~~json
+{
+
+  "Plugins": [
+  
+
+  ],
+
+  "McpToolsConfig": {
+    "McpServers": [
+      {
+        "Name": "DAENET_TEST_MCP_SERVER",
+        "Url": "https://localhost:7133/sse",
+        "ApiKey": "54321-edcba-09876-jihgf"
+      },
+      {
+        "Name": "Everything",
+        "Command": "npx",
+        "Arguments": "[\"-y\", \"@modelcontextprotocol/server-everything\"]"     
+      }
+    ]
+
+  }
+}
+
+~~~
+
+### Using Tools via SSE
+
+The first tool, "DAENET_TEST_MCP_SERVER", is accessible via the MCP SSE protocol.
+
+**Name:**
+Specifies the identifier of the tool. This value must match the tool name expected by the MCP server.
+
+**Url:**
+Defines the HTTP endpoint where the tool is hosted and listening for requests.
+
+**ApiKey (optional):**
+Provides authentication for the Plugin TestConsole when connecting to the tool. This is currently the only supported authentication mechanism.
+
+### Using Tools via STDIO and npx
+
+The second configuration entry, "Everything", defines a [demo tool](https://github.com/modelcontextprotocol/servers/tree/main/src/everything) that includes a variety of functions to showcase how tools can be implemented.
+
+**Command:**
+Specifies the name of the executable used to launch the tool.
+
+**Arguments:**
+A JSON-serialised object containing the arguments to be passed when running the tool. In this example, the configuration will result in launching the Everything tool using the following command:
+
+~~~bash
+npx @modelcontextprotocol/server-everything
+~~~
+The following figure illustrates the data flow when a user enters the prompt "invoked echo with 'aaaaa'". In this case, the Semantic Kernel takes the prompt from the console (1) and sends it to the model (2). The model has access to a set of defined functions, which consist of SK-Plugins provided by the Test Console and tools imported from MCP Servers. The model sends a response back (3) to the Semantic Kernel with a message marked with the role 'Tool' (not shown in the figure). The Semantic Kernel recognizes that the tool to be invoked is the MCP Tool and acts as a client (4), invoking the tool and processing the result (5), before finally sending the output to the user (6).
+
+![Image](https://github.com/user-attachments/assets/219ff317-df2a-4d77-962d-920826207d7e)
 
 # Call to action
 
