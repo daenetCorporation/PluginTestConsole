@@ -4,20 +4,14 @@
       "commandName": "Project",
       "environmentVariables": {
         "OPENAI_CHATCOMPLETION_DEPLOYMENT": "gpt-4o",
-        "OPENAI_EMBEDDING_DEPLOYMENT": "text-embedding-3-small",
-        "OPENAI_API_KEY": "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",
-        "OPENAI_ORGID": "org-XZmXJa5vIxm5kRwUgea2M2Ni",
+        "OPENAI_EMBEDDING_DEPLOYMENT": "",
+        "OPENAI_API_KEY": "",
+        "OPENAI_ORGID": "",
 
-        "AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT": "gpt-4.1",
-        "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "TestingEmbeddings",
-        "AZURE_OPENAI_ENDPOINT": "https://ddobric-agents-samples-resource.cognitiveservices.azure.com",
-        // "https://ddobric-agents-samples-resource.cognitiveservices.azure.com/openai/deployments/gpt-4.1/chat/completions?api-version=2025-01-01-preview"
-        "AZURE_OPENAI_API_KEY": "9FYpjaNp5Zkkieo3XlZGvWGpDRq89PKTfDZrE6AJun0c53IJidOuJQQJ99BEACfhMk5XJ3w3AAAAACOGfQsR"
-
-        //"AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT": "gpt-4o",
-        //"AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "TestingEmbeddings",
-        //"AZURE_OPENAI_ENDPOINT": "https://damir-openai-demo.openai.azure.com/",
-        //"AZURE_OPENAI_API_KEY": "1760b7980fe34c67b06d026bd7eee2f9"
+        "-AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "",
+        "-AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT": "gpt-4o",
+        "-AZURE_OPENAI_ENDPOINT": "https://***.openai.azure.com/",
+        "-AZURE_OPENAI_API_KEY": "***"
       }
     }
   }
