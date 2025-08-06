@@ -5,8 +5,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
-using System.DirectoryServices.AccountManagement;
-using System.Security.Principal;
 using System.Text;
 
 namespace Daenet.LLMPlugin.TestConsole.App
@@ -126,7 +124,8 @@ namespace Daenet.LLMPlugin.TestConsole.App
         private static string GetSystemMessage(McpToolsConfig mcpToolsConfig)
         {
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine($"You are the agent who provide informaiton for user's intent and invoke plugin functions. Today is {DateTimeOffset.Now.ToString()}.");
+            sb.AppendLine($"You are the agent who provide informaiton for user's intent and invoke plugin functions.");
+            sb.AppendLine($"Today is {DateTime.Now.ToString("MMMM dd, yyyy HH:mm:ss zzz")}.");
 
             if (mcpToolsConfig == null || mcpToolsConfig.McpServers == null || mcpToolsConfig.McpServers.Count ==0)
             {
