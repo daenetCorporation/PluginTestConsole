@@ -54,5 +54,6 @@ namespace Daenet.LLMPlugin.TestConsole.Entities
         /// </summary>
         public string? ImpersonatingUser { get; set; }
 
+        public string? ServerSystemMessage { get; set; }
     }
 }

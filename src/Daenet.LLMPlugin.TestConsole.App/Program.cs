@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.DirectoryServices.AccountManagement;
 using System.Security.Principal;
+using System.Text;
 
 namespace Daenet.LLMPlugin.TestConsole.App
 {
@@ -45,7 +46,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
             serviceCollection.AddSingleton<TestConsoleConfig>(new TestConsoleConfig()
             { 
                 SystemPrompt = "-> ",
-                SystemMessage = $"You are the agent who provide informaiton for user's intent and invoke plugin functions. Today is {DateTime.Now}."
+                SystemMessage = GetSystemMessage(mcpToolsConfig)
             });
 
             // Register the configuration of the built-in plugin.
@@ -120,6 +121,27 @@ namespace Daenet.LLMPlugin.TestConsole.App
             }
 
             svcCollection.AddSingleton(pluginLib);
+        }
+
+        private static string GetSystemMessage(McpToolsConfig mcpToolsConfig)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine($"You are the agent who provide informaiton for user's intent and invoke plugin functions. Today is {DateTimeOffset.Now.ToString()}.");
+
+            if (mcpToolsConfig == null || mcpToolsConfig.McpServers == null || mcpToolsConfig.McpServers.Count ==0)
+            {
+                return sb.ToString();
+            }
+
+            foreach (var server in mcpToolsConfig.McpServers)
+            {
+                if (!string.IsNullOrEmpty(server.ServerSystemMessage))
+                {
+                    sb.AppendLine($"{server.ServerSystemMessage}");
+                }
+            }
+
+            return sb.ToString();
         }
 
         private static void UseSemanticSearchApi(IConfiguration configuration, ServiceCollection serviceCollection)
