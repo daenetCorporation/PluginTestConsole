@@ -1,4 +1,5 @@
-﻿using Microsoft.SemanticKernel;
+﻿using Microsoft.Extensions.AI;
+using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
 using Microsoft.SemanticKernel.Embeddings;
 using System;
@@ -29,11 +30,12 @@ namespace Daenet.LLMPlugin.TestConsole.App.Plugin3
                  [Description("First sentence.")] string sentence1,
                  [Description("Second sentence.")] string sentence2)
         {
-            var embeddingSvc = _kernel.GetRequiredService<ITextEmbeddingGenerationService>();
-            var e1 = await embeddingSvc.GenerateEmbeddingAsync(sentence1);
-            var e2 = await embeddingSvc.GenerateEmbeddingAsync(sentence2);
+            //var embeddingSvc = _kernel.GetRequiredService<ITextEmbeddingGenerationService>();
+            var embeddingSvc = _kernel.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
+            var e1 = await embeddingSvc.GenerateAsync(sentence1);
+            var e2 = await embeddingSvc.GenerateAsync(sentence2);
 
-            return CalculateSimilarity(e1.ToArray(), e2.ToArray());
+            return CalculateSimilarity(e1.Vector.ToArray(), e2.Vector.ToArray());
         }
 #pragma warning restore SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 

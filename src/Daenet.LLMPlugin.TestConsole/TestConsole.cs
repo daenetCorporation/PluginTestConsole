@@ -59,7 +59,7 @@ namespace Daenet.LLMPlugin.TestConsole
             if (_kernel == null)
                 _kernel = GetKernel();
 
-            Console.WriteLine("CPDM Plugin Test Console started ...");
+            Console.WriteLine("Plugin and Tool Test Console started ...");
 
             // Create chat history
             var history = new ChatHistory();
