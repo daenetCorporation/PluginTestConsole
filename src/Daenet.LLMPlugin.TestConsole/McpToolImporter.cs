@@ -20,11 +20,11 @@ namespace Daenet.LLMPlugin.TestConsole
     {
         private readonly McpToolsConfig _mcpToolsCfg;
 
-        private readonly ILogger<TestConsole> _logger;
+        private readonly ILogger<McpToolImporter> _logger;
 
         private readonly Kernel _kernel;
 
-        public McpToolImporter(Kernel kernel, McpToolsConfig mcpToolsCfg, ILogger<TestConsole> logger)
+        public McpToolImporter(Kernel kernel, McpToolsConfig mcpToolsCfg, ILogger<McpToolImporter> logger)
         {
             _mcpToolsCfg = mcpToolsCfg;
             _logger = logger;
