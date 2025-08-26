@@ -40,9 +40,9 @@ namespace Daenet.LLMPlugin.TestConsole
             if (_mcpToolsCfg == null || _mcpToolsCfg.McpServers == null)
                 return;
 
-            var toolsDict = ListMcpTools();
+            var toolsDict = await ListMcpToolsAsync();
 
-            foreach (var kvp in await toolsDict)
+            foreach (var kvp in toolsDict)
             {
                 _logger.LogInformation($"MCP Server: {kvp.Key} has {kvp.Value.Count} tools.");
                 _kernel.Plugins.AddFromFunctions(kvp.Key, kvp.Value.Select(aiFunction =>
@@ -66,7 +66,7 @@ namespace Daenet.LLMPlugin.TestConsole
         /// </summary>
         /// <returns>The list of imported tools.</returns>
         /// <exception cref="Exception"></exception>
-        private async Task<Dictionary<string, IList<McpClientTool>>> ListMcpTools()
+        private async Task<Dictionary<string, IList<McpClientTool>>> ListMcpToolsAsync()
         {
             Dictionary<string, IList<McpClientTool>> dict = new Dictionary<string, IList<McpClientTool>>();
 
