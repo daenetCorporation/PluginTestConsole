@@ -128,6 +128,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine($"You are the agent who provide informaiton for user's intent and invoke plugin functions.");
+            sb.AppendLine($"Today is {DateTime.Now.ToString("MMMM dd, yyyy HH:mm:ss zzz")}.");
 
             if (mcpToolsConfig == null || mcpToolsConfig.McpServers == null || mcpToolsConfig.McpServers.Count ==0)
             {
