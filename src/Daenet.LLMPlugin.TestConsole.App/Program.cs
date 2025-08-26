@@ -23,7 +23,10 @@ namespace Daenet.LLMPlugin.TestConsole.App
 
             McpToolsConfig mcpToolsConfig = new McpToolsConfig();
             cfg.GetSection("McpToolsConfig").Bind(mcpToolsConfig);
-        
+
+            TestConsoleConfig consCfg = new TestConsoleConfig();
+            cfg.GetSection("TestConsoleConfig").Bind(consCfg);
+
             // Set up a service collection for dependency injection.
             var serviceCollection = new ServiceCollection();
 
@@ -44,7 +47,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
             serviceCollection.AddSingleton<TestConsoleConfig>(new TestConsoleConfig()
             { 
                 SystemPrompt = "-> ",
-                SystemMessage = GetSystemMessage(mcpToolsConfig)
+                SystemMessage = GetSystemMessageExtension(mcpToolsConfig)
             });
 
             // Register the configuration of the built-in plugin.
@@ -121,7 +124,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
             svcCollection.AddSingleton(pluginLib);
         }
 
-        private static string GetSystemMessage(McpToolsConfig mcpToolsConfig)
+        private static string GetSystemMessageExtension(McpToolsConfig mcpToolsConfig)
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine($"You are the agent who provide informaiton for user's intent and invoke plugin functions.");

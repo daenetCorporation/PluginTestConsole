@@ -1,7 +1,9 @@
 ﻿using Daenet.LLMPlugin.TestConsole.Entities;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
 using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -43,11 +45,20 @@ namespace Daenet.LLMPlugin.TestConsole
             foreach (var kvp in await toolsDict)
             {
                 _logger.LogInformation($"MCP Server: {kvp.Key} has {kvp.Value.Count} tools.");
-                _kernel.Plugins.AddFromFunctions(kvp.Key, kvp.Value.Select(aiFunction => aiFunction.AsKernelFunction()));
+                _kernel.Plugins.AddFromFunctions(kvp.Key, kvp.Value.Select(aiFunction =>
+                {
+                    var kernelFunc = aiFunction.AsKernelFunction();
+                    
+                    return kernelFunc;
+                }
+                ));
+
             }
 #pragma warning restore SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 
         }
+
+ 
 
         /// <summary>
         /// Traverse the MCP server configuration, lists all tools available on the MCP servers 
@@ -65,10 +76,23 @@ namespace Daenet.LLMPlugin.TestConsole
             {
                 transport = GetTransportFromConfiguration(mcpServer);
 
+                McpClientOptions options = new McpClientOptions();
+                options.Capabilities = new()
+                {    
+                    NotificationHandlers = [
+                    new(NotificationMethods.ProgressNotification, (notification, cancellationToken) =>
+                    {
+
+                        //notificationReceived.TrySetResult(notification);
+                        return default;
+                    })],
+                };
+
                 try
                 {
-                    var mcpClient = await McpClientFactory.CreateAsync(transport!);
-
+                    var mcpClient = await McpClientFactory.CreateAsync(transport!, options);
+                    
+                    //mcpClient.ServerCapabilities.NotificationHandlers.
                     var mcpTools = await mcpClient.ListToolsAsync();
 
                     dict.Add(mcpServer?.Name ?? $"MCP Server {mcpServer?.Url}", mcpTools);
