@@ -105,7 +105,7 @@ namespace Daenet.LLMPlugin.TestConsole
         /// </summary>
         /// <returns>The list of imported tools.</returns>
         /// <exception cref="Exception"></exception>
-        private async Task<Dictionary<string, IList<McpClientTool>>> ListMcpTools()
+        private async Task<Dictionary<string, IList<McpClientTool>>> ListMcpToolsAsync()
         {
             Dictionary<string, IList<McpClientTool>> toolsDict = new Dictionary<string, IList<McpClientTool>>();
 
