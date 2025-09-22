@@ -66,7 +66,9 @@ namespace Daenet.LLMPlugin.TestConsole.App
             var testConsole = serviceProvider.GetRequiredService<TestConsole>();
 
             var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
-            
+
+            var mcpLogger = serviceProvider.GetRequiredService<ILogger<McpClientResilent>>();          
+
             logger.LogInformation("Application running...");
 
             Stopwatch sw = new Stopwatch();
@@ -74,7 +76,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
             while (true)
             {
                 sw.Restart();
-                await testConsole.RunAsync();
+                await testConsole.RunAsync(mcpLogger);
                 sw.Stop();
 
                 Console.WriteLine($"Elapsed time: {sw.ElapsedMilliseconds} ms");

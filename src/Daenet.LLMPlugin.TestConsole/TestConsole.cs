@@ -8,6 +8,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using System;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -49,7 +50,7 @@ namespace Daenet.LLMPlugin.TestConsole
         /// </summary>
         /// In this case plugins are initialized with the kernel instance.</param>
         /// <returns></returns>
-        public async Task RunAsync()
+        public async Task RunAsync(ILogger<McpClientResilent> mcpLogger)
         {
             _kernel = null;
 
@@ -66,7 +67,7 @@ namespace Daenet.LLMPlugin.TestConsole
 
             history.AddSystemMessage(_consoleCfg.SystemMessage);
 
-            await ImportPlugins(_kernel, history);
+            await ImportPlugins(_kernel, history,mcpLogger);
 
             // Get chat completion service
             var chatCompletionService = _kernel.GetRequiredService<IChatCompletionService>();
@@ -136,7 +137,7 @@ namespace Daenet.LLMPlugin.TestConsole
             }
         }
 
-        private async Task ImportPlugins(Kernel kernel, ChatHistory history)
+        private async Task ImportPlugins(Kernel kernel, ChatHistory history, ILogger<McpClientResilent> mcpLogger)
         {
             var pluginInstances = _pluginMgr.CreateRequiredPlugins();
 
@@ -147,8 +148,9 @@ namespace Daenet.LLMPlugin.TestConsole
                 kernel.ImportPluginFromObject(pluginObj);
             }
 
-            McpToolImporter toolImporter = new McpToolImporter(kernel, _mcpToolsCfg, _logger);
-            
+            McpToolImporter toolImporter = new McpToolImporter(kernel, _mcpToolsCfg,
+                _logger, mcpLogger);
+
             await toolImporter.ImportMcpTools();
         }
 
