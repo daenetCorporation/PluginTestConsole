@@ -9,11 +9,11 @@ using System.Threading.Tasks;
 
 namespace Daenet.LLMPlugin.TestConsole
 {
-    public class McpClientResilent : IMcpClient
+    public class McpClientResilent : McpClient
     {
         private Task? _retryingWorkerTask;
 
-        private IMcpClient? _mcpClient;
+        private McpClient? _mcpClient;
 
         private readonly IClientTransport _transport;
 
@@ -23,7 +23,7 @@ namespace Daenet.LLMPlugin.TestConsole
 
         private readonly ILogger<McpClientResilent>? _logger;
 
-        public ServerCapabilities ServerCapabilities
+        public override ServerCapabilities ServerCapabilities
         {
             get
             {
@@ -31,9 +31,8 @@ namespace Daenet.LLMPlugin.TestConsole
                 return _mcpClient!.ServerCapabilities;
             }
         }
-
-
-        public Implementation ServerInfo
+ 
+        public override Implementation ServerInfo
         {
             get
             {
@@ -43,7 +42,7 @@ namespace Daenet.LLMPlugin.TestConsole
         }
 
 
-        public string? ServerInstructions
+        public override string? ServerInstructions
         {
             get
             {
@@ -52,7 +51,7 @@ namespace Daenet.LLMPlugin.TestConsole
             }
         }
 
-        public string? SessionId
+        public override string? SessionId
         {
             get
             {
@@ -66,12 +65,17 @@ namespace Daenet.LLMPlugin.TestConsole
         /// </summary>
         public bool IsConnected { get; private set; }
 
+
+        public override string? NegotiatedProtocolVersion => throw new NotImplementedException();
+
+    
+
         public void SetOnConnectionStateChangedDelegate(Action<bool> onConnectionStateChanged)
         {
             _onConnectionStateChanged = onConnectionStateChanged;
         }
 
-        private McpClientResilent(IMcpClient? underlyingMcpClient,
+        private McpClientResilent(McpClient? underlyingMcpClient,
             IClientTransport transport, McpClientOptions options,
             ILogger<McpClientResilent>? logger = null)
         {
@@ -84,14 +88,14 @@ namespace Daenet.LLMPlugin.TestConsole
             _retryingWorkerTask = RunRetryingWorkerAsync(CancellationToken.None);
         }
 
-        public static async Task<IMcpClient> CreateAsync(IClientTransport transport, McpClientOptions options,
+        public static async Task<McpClient> CreateAsync(IClientTransport transport, McpClientOptions options,
             ILogger<McpClientResilent>? mcpClientLogger = null)
         {
-            IMcpClient mcpClient = null!;
+            McpClient mcpClient = null!;
 
             try
             {
-                mcpClient = await McpClientFactory.CreateAsync(transport!, options);
+                mcpClient = await McpClient.CreateAsync(transport!, options);
             }
             catch (Exception ex)
             {
@@ -103,7 +107,7 @@ namespace Daenet.LLMPlugin.TestConsole
             return resilentClient;
         }
 
-        public ValueTask DisposeAsync()
+        public override ValueTask DisposeAsync()
         {
             if (_mcpClient == null)
                 return ValueTask.CompletedTask;
@@ -111,26 +115,27 @@ namespace Daenet.LLMPlugin.TestConsole
             return _mcpClient.DisposeAsync();
         }
 
-        public IAsyncDisposable RegisterNotificationHandler(string method, Func<JsonRpcNotification, CancellationToken, ValueTask> handler)
+        public override IAsyncDisposable RegisterNotificationHandler(string method, Func<JsonRpcNotification, CancellationToken, ValueTask> handler)
         {
             ThrowIfNotConnected();
 
             return _mcpClient!.RegisterNotificationHandler(method, handler);
         }
 
-        public Task SendMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken = default)
+        public override Task SendMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken = default)
         {
             ThrowIfNotConnected();
 
             return _mcpClient!.SendMessageAsync(message, cancellationToken);
         }
 
-        public Task<JsonRpcResponse> SendRequestAsync(JsonRpcRequest request, CancellationToken cancellationToken = default)
+        public override Task<JsonRpcResponse> SendRequestAsync(JsonRpcRequest request, CancellationToken cancellationToken = default)
         {
             ThrowIfNotConnected();
 
             return _mcpClient!.SendRequestAsync(request, cancellationToken);
         }
+
 
         private void ThrowIfNotConnected()
         {
@@ -150,12 +155,12 @@ namespace Daenet.LLMPlugin.TestConsole
 
         private async Task PingOrReconnectClient()
         {
-            IMcpClient mcpPingClient = null!;
+            McpClient mcpPingClient = null!;
 
             try
             {
                 if (_mcpClient == null)
-                    mcpPingClient = await McpClientFactory.CreateAsync(_transport, _options);
+                    mcpPingClient = await McpClient.CreateAsync(_transport, _options);
                 else
                     mcpPingClient = _mcpClient;
 
@@ -190,7 +195,7 @@ namespace Daenet.LLMPlugin.TestConsole
         /// </summary>
         /// <param name="mcpClient"></param>
         /// <returns></returns>
-        private async Task PingServerAsync(IMcpClient mcpClient)
+        private async Task PingServerAsync(McpClient mcpClient)
         {
             _logger?.LogTrace($"Pinging the MCP Server '{mcpClient.ServerInfo.Title}'.");
 
@@ -205,5 +210,6 @@ namespace Daenet.LLMPlugin.TestConsole
 
             _logger?.LogTrace($"MCP Server '{mcpClient.ServerInfo.Title}' available.");
         }
+
     }
 }

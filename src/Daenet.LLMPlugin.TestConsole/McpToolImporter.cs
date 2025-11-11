@@ -65,7 +65,7 @@ namespace Daenet.LLMPlugin.TestConsole
                 if (_mcpToolsCfg == null || _mcpToolsCfg.McpServers == null)
                     return;
 
-                var mcpTools = ListMcpTools();
+                var mcpTools = ListMcpToolsAsync();
 
                 foreach (var kvp in await mcpTools)
                 {
@@ -153,12 +153,12 @@ namespace Daenet.LLMPlugin.TestConsole
             return toolsDict;
         }
 
-        private static string GetMcpServerName(McpServer mcpServer)
+        private static string GetMcpServerName(Daenet.LLMPlugin.TestConsole.Entities.McpServer mcpServer)
         {
             return mcpServer?.Name ?? $"MCP Server {mcpServer?.Url}";
         }
 
-        private static IClientTransport GetTransportFromConfiguration(McpServer? mcpServer)
+        private static IClientTransport GetTransportFromConfiguration(Daenet.LLMPlugin.TestConsole.Entities.McpServer? mcpServer)
         {
             IClientTransport transport;
             if (!String.IsNullOrEmpty(mcpServer?.Url?.AbsoluteUri))
@@ -177,7 +177,7 @@ namespace Daenet.LLMPlugin.TestConsole
             return transport;
         }
 
-        private static IClientTransport GetStdioTransport(McpServer mcpServer)
+        private static IClientTransport GetStdioTransport(Daenet.LLMPlugin.TestConsole.Entities.McpServer mcpServer)
         {
             IClientTransport transport;
             var opts = new StdioClientTransportOptions
@@ -191,11 +191,12 @@ namespace Daenet.LLMPlugin.TestConsole
             return transport;
         }
 
-        private static IClientTransport GetSseTransport(McpServer mcpServer)
+        private static IClientTransport GetSseTransport(Daenet.LLMPlugin.TestConsole.Entities.McpServer mcpServer)
         {
             IClientTransport transport;
-            SseClientTransportOptions opts = new SseClientTransportOptions
+            HttpClientTransportOptions opts = new HttpClientTransportOptions
             {
+                TransportMode = HttpTransportMode.AutoDetect,
                 Name = GetDefaultMCPServerName(mcpServer),
                 Endpoint = mcpServer.Url!,
                 AdditionalHeaders = new Dictionary<string, string>()
@@ -211,11 +212,11 @@ namespace Daenet.LLMPlugin.TestConsole
                 }
             }
 
-            transport = new SseClientTransport(opts);
+            transport = new HttpClientTransport(opts);
             return transport;
         }
 
-        private static string GetDefaultMCPServerName(McpServer mcpServer)
+        private static string GetDefaultMCPServerName(Daenet.LLMPlugin.TestConsole.Entities.McpServer mcpServer)
         {
             return mcpServer.Name ?? $"MCP Server {mcpServer.Url}";
         }
