@@ -96,6 +96,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
             configBuilder.AddJsonFile("appsettings.json");
             configBuilder.AddEnvironmentVariables();
             configBuilder.AddCommandLine(args);
+            configBuilder.AddUserSecrets<Program>();
 
             return configBuilder.Build();
         }

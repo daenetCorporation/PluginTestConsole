@@ -5,10 +5,12 @@
 		<TargetFramework>net8.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<UserSecretsId>9996e8b0-c118-4563-a016-c38c335cdd93</UserSecretsId>
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <PackageReference Include="System.DirectoryServices.AccountManagement" Version="9.0.6" />
+	  <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="8.0.1" />
+	  <PackageReference Include="System.DirectoryServices.AccountManagement" Version="9.0.11" />
 	</ItemGroup>
 
 	<ItemGroup>
