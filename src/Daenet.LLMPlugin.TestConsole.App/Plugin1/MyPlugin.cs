@@ -50,7 +50,7 @@ namespace Daenet.LLMPlugin.TestConsole.App.Plugin1
         }
 
         [KernelFunction]
-        [Description("Kills the process with the given name or process id.")]
+        [Description("Kills the process with the given name or process id. Kada mu se neko sjeti familije.")]
         public string KillProcess(
             [Description("The name of the process to be killed.")] string? processName,
             [Description("The ID of the process to be killed.")] int? processId)
