@@ -1,17 +1,14 @@
-﻿using Daenet.LLMPlugin.Common;
+using Azure;
+using Azure.AI.OpenAI;
+using Daenet.LLMPlugin.Common;
 using Daenet.LLMPlugin.TestConsole.Entities;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
-using ModelContextProtocol.Client;
-using ModelContextProtocol.Protocol;
-using System;
-using System.Diagnostics;
-using System.Text.Json;
-using System.Text.Json.Nodes;
+using System.ComponentModel;
+using System.Reflection;
 
 namespace Daenet.LLMPlugin.TestConsole
 {
@@ -23,7 +20,7 @@ namespace Daenet.LLMPlugin.TestConsole
         private readonly ILogger<TestConsole> _logger;
         private readonly PluginManager _pluginMgr;
         private readonly McpToolsConfig _mcpToolsCfg;
-        private static Kernel? _kernel;
+        private static IChatClient? _innerChatClient;
 
         public TestConsole(TestConsoleConfig cfg, PluginManager pluginMgr, McpToolsConfig mcpToolsCfg, ILogger<TestConsole> logger)
         {
@@ -34,359 +31,159 @@ namespace Daenet.LLMPlugin.TestConsole
         }
 
         /// <summary>
-        /// Initializes the singleton instance of the Semantic kernel for DI.
+        /// Initializes the singleton IChatClient and registers it (and optionally an embedding generator) in DI.
         /// </summary>
-        /// <param name="svcCollection"></param>
-        public static void UseSemantikKernel(IServiceCollection svcCollection)
+        public static void UseAgentFramework(IServiceCollection svcCollection)
         {
-            _kernel = GetKernel();
+            _innerChatClient = CreateInnerChatClient();
 
             if (svcCollection != null)
-                svcCollection.AddSingleton(_kernel);
+            {
+                svcCollection.AddSingleton<IChatClient>(_innerChatClient);
+
+                var embeddingGenerator = TryCreateEmbeddingGenerator();
+                if (embeddingGenerator != null)
+                    svcCollection.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(embeddingGenerator);
+            }
         }
 
         /// <summary>
-        /// Loads all plugins and runs the chatbot conversation.
+        /// Loads all plugins/tools and runs the agent conversation loop.
         /// </summary>
-        /// In this case plugins are initialized with the kernel instance.</param>
-        /// <returns></returns>
-        public async Task RunAsync(ILogger<McpClientResilent> mcpLogger)
+        public async Task RunAsync(AIAgent agent, AgentSession sess, ILogger<McpClientResilent> mcpLogger)
         {
-            _kernel = null;
-
             var clr = ConsoleColor.White;
             Console.ForegroundColor = clr;
 
-            if (_kernel == null)
-                _kernel = GetKernel();
-
             Console.WriteLine("Plugin and Tool Test Console started ...");
 
-            // Create chat history
-            var history = new ChatHistory();
-
-            history.AddSystemMessage(_consoleCfg.SystemMessage);
-
-            await ImportPlugins(_kernel, history,mcpLogger);
-
-            // Get chat completion service
-            var chatCompletionService = _kernel.GetRequiredService<IChatCompletionService>();
-
-            string? userInput;
-
-            // Start the conversation
             Console.ForegroundColor = _consoleCfg.UserInputColor;
             Console.Write(_consoleCfg.SystemPrompt);
 
-            var sysPrompt = $@"Today is: {DateTime.UtcNow:yyyy MM dd HH:mm:ss}";
-
+            string? userInput;
             while ((userInput = Console.ReadLine()) != null)
             {
                 Console.ForegroundColor = clr;
 
-                // Add user input
-                history.AddUserMessage(userInput);
-
-                // Enable auto function calling
-                OpenAIPromptExecutionSettings openAIPromptExecutionSettings = new()
-                {
-                    ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,
-                    Temperature = 0,
-                    ChatSystemPrompt = sysPrompt
-                };
-
-                ChatMessageContent? result = null;
-
                 try
                 {
-                    // Get the response from the AI
-                    result = await chatCompletionService.GetChatMessageContentAsync(
-                        history,
-                        executionSettings: openAIPromptExecutionSettings,
-                        kernel: _kernel);
+                    var response = await agent.RunAsync(userInput, sess);
 
                     Console.ForegroundColor = _consoleCfg.AssistentMessageColor;
-
-                    // Print the results
-                    Console.WriteLine("Assistant > " + result);
-
-                    // Add the message from the agent to the chat history
-                    history.AddMessage(result.Role, result.Content ?? string.Empty);
-
-                    //break;
+                    Console.WriteLine("Assistant > " + response.Text);
                 }
                 catch (Exception ex)
                 {
-                    if (history.FirstOrDefault(m => (m.Content == null ? String.Empty : m.Content).ToString().Contains("Started the new conversation")) != null)
-                    {
-                        history.Clear();
-                        history.AddSystemMessage(_consoleCfg.SystemMessage);
-                    }
-                    else
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine($"Assistant > {ex.Message}");
-                    }
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"Assistant > {ex.Message}");
                 }
 
-
-                // Get user input again
                 Console.ForegroundColor = _consoleCfg.PromptColor;
                 Console.Write(_consoleCfg.SystemPrompt);
                 Console.ForegroundColor = _consoleCfg.UserInputColor;
             }
         }
 
-        private async Task ImportPlugins(Kernel kernel, ChatHistory history, ILogger<McpClientResilent> mcpLogger)
+        public async Task ImportToolsAsync(List<AITool> tools, AgentSession session, ILogger<McpClientResilent> mcpLogger)
         {
+            // Built-in console management plugin.
+            var consolePlugin = new TestConsolePlugin(tools, session, _consoleCfg);
+            AddObjectToTools(tools, consolePlugin);
+
+            // Dynamically configured plugins from appsettings.
             var pluginInstances = _pluginMgr.CreateRequiredPlugins();
+            foreach (var pluginInstance in pluginInstances)
+                AddObjectToTools(tools, pluginInstance);
 
-            kernel.ImportPluginFromObject(new TestConsolePlugin(kernel, history, _consoleCfg));
-
-            foreach (var pluginObj in pluginInstances)
-            {
-                kernel.ImportPluginFromObject(pluginObj);
-            }
-
-            McpToolImporter toolImporter = new McpToolImporter(kernel, _mcpToolsCfg,
-                _logger, mcpLogger);
-
+            // MCP tools (McpClientTool inherits AIFunction/AITool).
+            var toolImporter = new McpToolImporter(tools, _mcpToolsCfg, _logger, mcpLogger);
             await toolImporter.ImportMcpTools();
         }
 
+        /// <summary>
+        /// Discovers all public instance methods decorated with [Description] on <paramref name="pluginInstance"/>
+        /// and registers each as an <see cref="AIFunction"/> in <paramref name="tools"/>.
+        /// </summary>
+        internal static void AddObjectToTools(List<AITool> tools, object pluginInstance)
+        {
+            var methods = pluginInstance.GetType()
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(m => m.DeclaringType != typeof(object)
+                         && m.GetCustomAttribute<DescriptionAttribute>() != null);
 
-        /*
-private static void UseSemantSearchApi(IServiceCollection svcCollection)
-{
-   ILoggerFactory lFact = LoggerFactory.Create(builder =>
-   {
-       builder.AddDebug();
-   });
-
-   var logger = lFact.CreateLogger<SearchApi>();
-
-   var allowedDataSources = CreateAllowedDataSources(_config!);
-
-   var embeddingIndexDal = CreateEmbeddingIndexDal(_config!, lFact);
-
-   var embeddingGenerator = CreateEmbeddingGenerator(_config!);
-
-   ISimilarityCalculator distanceCalculator = new CosineDistanceCalculator();
-
-   var textConvertors = CreateTextConvertors();
-
-   var blobStorageConfig = GetBlobStorageConfig(_config!);
-
-   IDocumentSplitter documentSplitter = new DocumentSplitter();
-
-   var searchApi = new SearchApi(embeddingGenerator, distanceCalculator, embeddingIndexDal, logger, textConvertors, documentSplitter, worker: null, blobStorageConfig, allowedDataSources);
-
-   svcCollection.AddSingleton<ISearchApi>(searchApi);
-}
-
-
-private static BlobStorageConfig GetBlobStorageConfig(IConfigurationRoot config)
-{
-   var blobconfig = config.GetSection($"{nameof(BlobStorageConfig)}").Get<BlobStorageConfig>() ?? throw new Exception($"{nameof(BlobStorageConfig)} is missing");
-   return blobconfig;
-}
-
-private static TextConvertors CreateTextConvertors()
-{
-   TextConvertors cvs = new()
-   {
-       Convertors = new List<ITextConvertor>()
-       {
-               new PdfToTextConvertor() , new WordConvertor()
-       }
-   };
-   return cvs;
-}
-
-private static IEmbeddingGenerator CreateEmbeddingGenerator(IConfigurationRoot config)
-{
-   var openAICfg = config.GetSection("OpenAi").Get<AzureOpenAICfg>() ?? throw new Exception($"{nameof(AzureOpenAICfg)} is missing");
-
-   if (string.IsNullOrEmpty(openAICfg.Key))
-   {
-       throw new Exception($"{nameof(AzureOpenAICfg)} Key is missing");
-   }
-
-   return new AzureOpenAIEmbeddingGenerator(openAICfg);
-}
-
-private static IVectorDbClient CreateEmbeddingIndexDal(IConfigurationRoot config, ILoggerFactory loggerFactory)
-{
-   IVectorDbClient vectorDbClient = null;
-   var configDal = config.GetSection($"{nameof(QDrantDalConfig)}").Get<QDrantDalConfig>();
-   if (configDal != null)
-   {
-       return CreateQdrantDal(config, loggerFactory);
-   }
-   else
-   {
-       return CreateSqlDal(config, loggerFactory);
-   }
-}
-
-private static IVectorDbClient CreateSqlDal(IConfigurationRoot config, ILoggerFactory loggerFactory)
-{
-   var sqlCfg = config.GetSection($"{nameof(SqlDalConfig)}").Get<SqlDalConfig>() ?? throw new Exception($"{nameof(SqlDalConfig)} and {nameof(SqlDalConfig)} are missing");
-
-   var logger = loggerFactory.CreateLogger<SqlServerDal>();
-
-   return new SqlServerDal(sqlCfg, logger);
-}
-
-private static IVectorDbClient CreateQdrantDal(IConfigurationRoot config, ILoggerFactory loggerFactory)
-{
-   var qCfg = config.GetSection($"{nameof(QDrantDalConfig)}").Get<QDrantDalConfig>() ?? throw new Exception($"{nameof(QDrantDalConfig)} is missing");
-
-   var logger = loggerFactory.CreateLogger<QDrantClient>();
-
-   return new QDrantClient(qCfg, logger);
-}
-
-private static AllowedDataSources? CreateAllowedDataSources(IConfigurationRoot config)
-{
-   var sec = config.GetSection($"{nameof(AllowedDataSources)}");
-
-   if (sec != null)
-   {
-       AllowedDataSources src = sec.Get<AllowedDataSources>()!;
-       return src;
-   }
-
-   return null;
-}
-*/
+            foreach (var method in methods)
+                tools.Add(AIFunctionFactory.Create(method, pluginInstance));
+        }
 
         /// <summary>
-        /// Gets the kernel from environment settings.
+        /// Creates an IChatClient backed by Azure OpenAI or OpenAI, chosen by environment variables.
         /// </summary>
-        /// <returns></returns>
-        /// <exception cref="Exception"></exception>
-        private static Kernel GetKernel()
+        public static IChatClient CreateInnerChatClient()
         {
-            Kernel? kernel = TryGetAzureKernel();
-            if (kernel == null)
-                kernel = TryGetOpenAIKernel();
+            var client = TryGetAzureChatClient() ?? TryGetOpenAIChatClient();
 
-            if (kernel == null)
-                throw new Exception("No valid kernel found.To initialize the kernel, please see documentation. Requred environment variables must be set.");
+            if (client == null)
+                throw new Exception(
+                    "No valid AI client found. Set AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT, " +
+                    "or OPENAI_API_KEY + OPENAI_CHATCOMPLETION_DEPLOYMENT.");
 
-            return kernel;
+            return client;
         }
 
-
-        private static Kernel? TryGetOpenAIKernel()
+        private static IChatClient? TryGetAzureChatClient()
         {
-            Kernel? kernel = null;
+            var apiKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
+            var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
+            var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME");
 
-            if (Environment.GetEnvironmentVariable("OPENAI_API_KEY") != null &&
-             Environment.GetEnvironmentVariable("OPENAI_ORGID") != null)
-            {
-                if (Environment.GetEnvironmentVariable("OPENAI_CHATCOMPLETION_DEPLOYMENT") != null &&
-                     Environment.GetEnvironmentVariable("OPENAI_EMBEDDING_DEPLOYMENT") == null)
-                {
-                    kernel = Kernel.CreateBuilder()
-                     .AddOpenAIChatCompletion(
-                    Environment.GetEnvironmentVariable("OPENAI_CHATCOMPLETION_DEPLOYMENT")!, // The name of your deployment (e.g., "gpt-3.5-turbo")
-                    Environment.GetEnvironmentVariable("OPENAI_API_KEY")!,
-                    Environment.GetEnvironmentVariable("OPENAI_ORGID")!)
-                .Build();
-                }
-                else if (Environment.GetEnvironmentVariable("OPENAI_CHATCOMPLETION_DEPLOYMENT") != null &&
-                     Environment.GetEnvironmentVariable("OPENAI_EMBEDDING_DEPLOYMENT") != null)
-                {
-#pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                    kernel = Kernel.CreateBuilder()
-                     .AddOpenAIChatCompletion(
-                    Environment.GetEnvironmentVariable("OPENAI_CHATCOMPLETION_DEPLOYMENT")!, // The name of your deployment (e.g., "gpt-3.5-turbo")
-                    Environment.GetEnvironmentVariable("OPENAI_API_KEY")!,
-                    Environment.GetEnvironmentVariable("OPENAI_ORGID")!)
-                     .AddOpenAITextEmbeddingGeneration(
-                     Environment.GetEnvironmentVariable("OPENAI_EMBEDDING_DEPLOYMENT")!,
-                     Environment.GetEnvironmentVariable("OPENAI_API_KEY")!,
-                     Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY")!
-                )
-                .Build();
-#pragma warning restore SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                }
-                else
-                {
-#pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                    kernel = Kernel.CreateBuilder()
-                     .AddOpenAITextEmbeddingGeneration(
-                    Environment.GetEnvironmentVariable("OPENAI_EMBEDDING_DEPLOYMENT")!, // The name of your deployment (e.g., "gpt-3.5-turbo")
-                    Environment.GetEnvironmentVariable("OPENAI_API_KEY")!,
-                    Environment.GetEnvironmentVariable("OPENAI_ORGID")!)
-                .Build();
-#pragma warning restore SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                }
-            }
-            return kernel;
+            if (apiKey == null || endpoint == null || deployment == null)
+                return null;
+
+            var azureClient = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
+            return azureClient.GetChatClient(deployment).AsIChatClient();
         }
 
-        private static Kernel? TryGetAzureKernel()
+        private static IChatClient? TryGetOpenAIChatClient()
         {
-            Kernel? kernel = null;
+            var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+            var model = Environment.GetEnvironmentVariable("OPENAI_CHATCOMPLETION_DEPLOYMENT");
 
-            if (Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY") != null &&
-         Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT") != null)
+            if (apiKey == null || model == null)
+                return null;
+
+            var openAIClient = new OpenAI.OpenAIClient(new System.ClientModel.ApiKeyCredential(apiKey));
+            return openAIClient.GetChatClient(model).AsIChatClient();
+        }
+
+        private static IEmbeddingGenerator<string, Embedding<float>>? TryCreateEmbeddingGenerator()
+        {
+            // Azure OpenAI embedding
+            var apiKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
+            var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
+            var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT");
+
+            if (apiKey != null && endpoint != null && deployment != null)
             {
-                if (Environment.GetEnvironmentVariable("AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT") != null &&
-                    Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT") == null)
-                {
-#pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                    kernel = Kernel.CreateBuilder()
-                .AddAzureOpenAIChatCompletion(
-                    Environment.GetEnvironmentVariable("AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT")!,  // The name of your deployment (e.g., "text-davinci-003")
-                    Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")!,    // The endpoint of your Azure OpenAI service
-                    Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY")!      // The API key of your Azure OpenAI service
-                )
-                .Build();
-#pragma warning restore SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                }
-                else if (Environment.GetEnvironmentVariable("AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT") != null &&
-                    Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT") != null)
-                {
-#pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                    kernel = Kernel.CreateBuilder()
-                .AddAzureOpenAIChatCompletion(
-                    Environment.GetEnvironmentVariable("AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT")!,  // The name of your deployment (e.g., "text-davinci-003")
-                    Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")!,    // The endpoint of your Azure OpenAI service
-                    Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY")!      // The API key of your Azure OpenAI service
-                )
-                .AddAzureOpenAITextEmbeddingGeneration(
-                     Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")!,
-                     Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")!,    // The endpoint of your Azure OpenAI service
-                     Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY")!      // The API key of your Azure OpenAI service
-                )
-                .Build();
-#pragma warning restore SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                }
-                else
-                {
-                    #pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                    //kernel = Kernel.CreateBuilder()
-                    //                 .AddAzureOpenAITextEmbeddingGeneration(
-                    //    Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")!,
-                    //    Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")!,    // The endpoint of your Azure OpenAI service
-                    //    Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY")!      // The API key of your Azure OpenAI service
-                   //)
-                   //.Build();
-#pragma warning restore SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                }
+                var azureClient = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
+                return azureClient.GetEmbeddingClient(deployment).AsIEmbeddingGenerator();
             }
 
-            return kernel;
+            // OpenAI embedding
+            apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+            deployment = Environment.GetEnvironmentVariable("OPENAI_EMBEDDING_DEPLOYMENT");
+
+            if (apiKey != null && deployment != null)
+            {
+                var openAIClient = new OpenAI.OpenAIClient(new System.ClientModel.ApiKeyCredential(apiKey));
+                return openAIClient.GetEmbeddingClient(deployment).AsIEmbeddingGenerator();
+            }
+
+            return null;
         }
 
         /// <summary>
         /// Makes Plugin configuration accessible.
         /// </summary>
-        /// <param name="builder"></param>
         public static PluginLibrary GetPlugins(IConfigurationRoot configuration, string pluginConfigSection = "Plugins")
         {
             PluginLibrary pluginLib = new PluginLibrary();

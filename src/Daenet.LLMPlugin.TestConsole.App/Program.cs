@@ -1,6 +1,9 @@
 ﻿
+using Daenet.ClawLib;
 using Daenet.LLMPlugin.Common;
 using Daenet.LLMPlugin.TestConsole.Entities;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -13,11 +16,11 @@ namespace Daenet.LLMPlugin.TestConsole.App
     {
         static async Task Main(string[] args)
         {
-            await Sample1(args);
+            await SampleClaw(args);
         }
 
 
-        private static async Task Sample1(string[] args)
+        private static async Task SampleClaw(string[] args)
         {
             var cfg = InitializeConfig(args);
 
@@ -53,11 +56,10 @@ namespace Daenet.LLMPlugin.TestConsole.App
             // Register the configuration of the built-in plugin.
             serviceCollection.AddSingleton<TestConsole>();
 
-            UseSemanticSearchApi(cfg, serviceCollection);
-
-           // Creates the instance of Semantic kernel and register it for DI.
-            // This is required if there is at least a single plugin, which requires Semantik Kernel.
-            TestConsole.UseSemantikKernel(serviceCollection);
+       
+           // Creates the IChatClient and registers it (+ optional embedding generator) for DI.
+            // Required for chat completion and, when embedding env vars are set, for EmbeddingsPlugin.
+            TestConsole.UseAgentFramework(serviceCollection);
 
             // Build the service provider.
             var serviceProvider = serviceCollection.BuildServiceProvider();
@@ -71,18 +73,98 @@ namespace Daenet.LLMPlugin.TestConsole.App
 
             logger.LogInformation("Application running...");
 
+            List<AITool> tools = new List<AITool>();
+
+            var clawSession = ClawSession.FromEnvironment(tools);
+
+            await testConsole.ImportToolsAsync(tools, clawSession.AgentSession, mcpLogger);
+
+            var agent = await clawSession.InitializeAsync();
+
+           
+
+            await testConsole.RunAsync(agent, clawSession.AgentSession, mcpLogger);
+
+        }
+
+        private static async Task Sample1(string[] args)
+        {
+            var cfg = InitializeConfig(args);
+
+            McpToolsConfig mcpToolsConfig = new McpToolsConfig();
+            cfg.GetSection("McpToolsConfig").Bind(mcpToolsConfig);
+
+            TestConsoleConfig consCfg = new TestConsoleConfig();
+            cfg.GetSection("TestConsoleConfig").Bind(consCfg);
+
+            // Set up a service collection for dependency injection.
+            var serviceCollection = new ServiceCollection();
+
+            serviceCollection.AddSingleton<McpToolsConfig>(mcpToolsConfig);
+
+            // Initializes the logging.
+            serviceCollection.AddLogging(configure => configure.AddConsole());
+
+            UsePluginLibrary(serviceCollection, cfg);
+
+            // Register the provider for creating instances of plugins.
+            serviceCollection.AddSingleton<IPlugInProvider, DefaultPlugInProvider>();
+
+            // Register the configuration with the dependency injection container.
+            serviceCollection.AddSingleton<PluginManager>();
+
+            // Register TestConsoleConfig with the dependency injection container.
+            serviceCollection.AddSingleton<TestConsoleConfig>(new TestConsoleConfig()
+            {
+                SystemPrompt = "-> ",
+                SystemMessage = GetSystemMessageExtension(mcpToolsConfig)
+            });
+
+            // Register the configuration of the built-in plugin.
+            serviceCollection.AddSingleton<TestConsole>();
+
+
+            // Creates the IChatClient and registers it (+ optional embedding generator) for DI.
+            // Required for chat completion and, when embedding env vars are set, for EmbeddingsPlugin.
+            TestConsole.UseAgentFramework(serviceCollection);
+
+            // Build the service provider.
+            var serviceProvider = serviceCollection.BuildServiceProvider();
+
+            // Get an instance of TestConsole from the service provider.
+            var testConsole = serviceProvider.GetRequiredService<TestConsole>();
+
+            var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
+
+            var mcpLogger = serviceProvider.GetRequiredService<ILogger<McpClientResilent>>();
+
+            logger.LogInformation("Application running...");
+
             Stopwatch sw = new Stopwatch();
 
-            while (true)
-            {
-                sw.Restart();
-                await testConsole.RunAsync(mcpLogger);
-                sw.Stop();
+            var tools = new List<AITool>();
 
-                Console.WriteLine($"Elapsed time: {sw.ElapsedMilliseconds} ms");
-            }
+            var agentChannel = TestConsole.CreateInnerChatClient();
+
+            // Create a temporary placeholder agent to initialize the session
+            // We'll recreate the real agent after tools are loaded
+            AIAgent tempAgent = agentChannel.AsAIAgent(
+                instructions: consCfg.SystemMessage,
+                name: "TempAgent",
+                tools: new List<AITool>());
+
+            AgentSession agentSession = await tempAgent.CreateSessionAsync();
+
+            await testConsole.ImportToolsAsync(tools, agentSession, mcpLogger);
+
+            // Create the final agent with all loaded tools
+            AIAgent agent = agentChannel.AsAIAgent(
+                instructions: consCfg.SystemMessage,
+                name: "TestConsoleAgent",
+                tools: tools);
+
             // Call the RunAsync method on the TestConsole instance.
-            //await testConsole.RunAsync();
+            await testConsole.RunAsync(agent, agentSession, mcpLogger);
         }
 
         /// <summary>
@@ -131,8 +213,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine($"You are the agent who provide informaiton for user's intent and invoke plugin functions.");
-            sb.AppendLine($"Today is {DateTime.Now.ToString("MMMM dd, yyyy HH:mm:ss zzz")}.");
-
+           
             if (mcpToolsConfig == null || mcpToolsConfig.McpServers == null || mcpToolsConfig.McpServers.Count ==0)
             {
                 return sb.ToString();

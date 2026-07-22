@@ -1,55 +1,46 @@
-﻿using Azure.Core;
 using Daenet.LLMPlugin.TestConsole.Entities;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Microsoft.SemanticKernel;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
-using ModelContextProtocol.Server;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
-using static System.Net.WebRequestMethods;
 
 namespace Daenet.LLMPlugin.TestConsole
 {
     /// <summary>
-    /// Provides functionality for importing MCP Tools definmed in the configuration file.
+    /// Imports MCP tools defined in the configuration file and adds them to the shared tools list.
+    /// McpClientTool inherits AIFunction (and therefore AITool), so no conversion is needed.
     /// </summary>
-    /// <remarks>This class is intended for internal use and facilitates operations related to MCP tool data
-    /// import. It is not designed for direct use by external consumers.</remarks>
     internal class McpToolImporter
     {
         private readonly McpToolsConfig _mcpToolsCfg;
-
         private readonly ILogger<TestConsole> _logger;
-
-        private readonly Kernel _kernel;
-
-        private readonly ILogger<McpClientResilent>? _mcpClientLogger = null;
-
-        public McpToolImporter(Kernel kernel, McpToolsConfig mcpToolsCfg,
-            ILogger<TestConsole> logger,
-            ILogger<McpClientResilent>? mcpClientLogger = null)
-        {
-            _mcpToolsCfg = mcpToolsCfg;
-            _logger = logger;
-            _kernel = kernel ?? throw new ArgumentNullException(nameof(kernel), "Kernel cannot be null.");
-            _mcpClientLogger = mcpClientLogger;
-        }
+        private readonly IList<AITool> _tools;
+        private readonly ILogger<McpClientResilent>? _mcpClientLogger;
 
         /// <summary>
-        /// It prevents that Import is invoked withing import then the MCP Server is connected and change its status.
+        /// Tracks which AIFunction instances were added for each MCP server name,
+        /// so they can be removed and replaced on reconnection.
+        /// </summary>
+        private readonly Dictionary<string, IList<McpClientTool>> _importedByServer = new();
+
+        /// <summary>
+        /// Prevents re-entrant imports triggered by the reconnection callback.
         /// </summary>
         private bool _isImporting = false;
 
+        public McpToolImporter(IList<AITool> tools, McpToolsConfig mcpToolsCfg,
+            ILogger<TestConsole> logger,
+            ILogger<McpClientResilent>? mcpClientLogger = null)
+        {
+            _tools = tools ?? throw new ArgumentNullException(nameof(tools));
+            _mcpToolsCfg = mcpToolsCfg;
+            _logger = logger;
+            _mcpClientLogger = mcpClientLogger;
+        }
+
         private void OnMcpServerStatusChanged(bool isConnected)
         {
-            // Every time one of MCP servers is reconnected, we have to recreate the kernel.
             if (isConnected && !_isImporting)
                 _ = ImportMcpTools();
         }
@@ -60,88 +51,68 @@ namespace Daenet.LLMPlugin.TestConsole
             {
                 _isImporting = true;
 
-#pragma warning disable SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-
                 if (_mcpToolsCfg == null || _mcpToolsCfg.McpServers == null)
                     return;
 
-                var mcpTools = ListMcpToolsAsync();
+                var toolsDict = await ListMcpToolsAsync();
 
-                foreach (var kvp in await mcpTools)
+                foreach (var kvp in toolsDict)
                 {
                     _logger.LogInformation($"MCP Server: {kvp.Key} has {kvp.Value.Count} tools.");
 
-                    RemovePluginIfExist(kvp.Key);
-
-                    _kernel.Plugins.AddFromFunctions(kvp.Key, kvp.Value.Select(aiFunction =>
+                    // Remove previously imported tools for this server.
+                    if (_importedByServer.TryGetValue(kvp.Key, out var oldTools))
                     {
-                        var kernelFunc = aiFunction.AsKernelFunction();
-
-                        return kernelFunc;
+                        foreach (var oldTool in oldTools)
+                            _tools.Remove(oldTool);
                     }
-                    ));
 
+                    // Register and track the new tools.
+                    _importedByServer[kvp.Key] = kvp.Value;
+                    foreach (var tool in kvp.Value)
+                        _tools.Add(tool);
                 }
-#pragma warning restore SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
             }
             finally { _isImporting = false; }
-
         }
 
-        private void RemovePluginIfExist(string pluginName)
-        {
-            foreach (var plugin in new List<KernelPlugin>(_kernel.Plugins))
-            {
-                if (plugin.Name == pluginName)
-                    _kernel.Plugins.Remove(plugin);
-            }
-        }
-
-        private Dictionary<string, McpClientResilent> _mcpClients = new Dictionary<string, McpClientResilent>();
+        private Dictionary<string, McpClientResilent> _mcpClients = new();
 
         /// <summary>
-        /// Traverse the MCP server configuration, lists all tools available on the MCP servers 
-        /// and returns them to the kernel as kernel plugin tools.
+        /// Connects to each configured MCP server and retrieves its tool list.
         /// </summary>
-        /// <returns>The list of imported tools.</returns>
-        /// <exception cref="Exception"></exception>
         private async Task<Dictionary<string, IList<McpClientTool>>> ListMcpToolsAsync()
         {
-            Dictionary<string, IList<McpClientTool>> toolsDict = new Dictionary<string, IList<McpClientTool>>();
-
-            IClientTransport? transport = null;
+            var toolsDict = new Dictionary<string, IList<McpClientTool>>();
 
             foreach (var mcpServer in _mcpToolsCfg?.McpServers!)
             {
                 string mcpServerName = GetMcpServerName(mcpServer);
-
-                transport = GetTransportFromConfiguration(mcpServer);
+                var transport = GetTransportFromConfiguration(mcpServer);
 
                 McpClientOptions options = new McpClientOptions();
                 options.Capabilities = new()
                 {
-                    NotificationHandlers = [
-                    new(NotificationMethods.ProgressNotification, (notification, cancellationToken) =>
-                    {
-
-                        //notificationReceived.TrySetResult(notification);
-                        return default;
-                    })],
+                     
+                    //NotificationHandlers =
+                    //[
+                    //    new(NotificationMethods.ProgressNotification, (notification, cancellationToken) =>
+                    //    {
+                    //        return default;
+                    //    })
+                    //],
                 };
 
                 try
                 {
-                    if (_mcpClients.ContainsKey(mcpServerName) == false)
+                    if (!_mcpClients.ContainsKey(mcpServerName))
                     {
-                        var newResilentMcpClient = (McpClientResilent)await McpClientResilent.CreateAsync(transport!, options, _mcpClientLogger);
-
-                        newResilentMcpClient.SetOnConnectionStateChangedDelegate(OnMcpServerStatusChanged);
-
-                        _mcpClients.Add(mcpServerName, newResilentMcpClient);
+                        var newResilientClient = (McpClientResilent)await McpClientResilent.CreateAsync(transport!, options, _mcpClientLogger);
+                        newResilientClient.SetOnConnectionStateChangedDelegate(OnMcpServerStatusChanged);
+                        _mcpClients.Add(mcpServerName, newResilientClient);
                     }
 
                     var mcpTools = await _mcpClients[mcpServerName].ListToolsAsync();
-
                     toolsDict[mcpServerName] = mcpTools;
                 }
                 catch (Exception ex)
@@ -153,51 +124,37 @@ namespace Daenet.LLMPlugin.TestConsole
             return toolsDict;
         }
 
-        private static string GetMcpServerName(Daenet.LLMPlugin.TestConsole.Entities.McpServer mcpServer)
+        private static string GetMcpServerName(McpServer mcpServer)
+            => mcpServer?.Name ?? $"MCP Server {mcpServer?.Url}";
+
+        private static IClientTransport GetTransportFromConfiguration(McpServer? mcpServer)
         {
-            return mcpServer?.Name ?? $"MCP Server {mcpServer?.Url}";
+            if (!string.IsNullOrEmpty(mcpServer?.Url?.AbsoluteUri))
+                return GetSseTransport(mcpServer);
+
+            if (!string.IsNullOrEmpty(mcpServer?.Command) && mcpServer?.Arguments != null)
+                return GetStdioTransport(mcpServer);
+
+            throw new Exception("MCP server configuration is not valid. Either URL or Command must be set.");
         }
 
-        private static IClientTransport GetTransportFromConfiguration(Daenet.LLMPlugin.TestConsole.Entities.McpServer? mcpServer)
+        private static IClientTransport GetStdioTransport(McpServer mcpServer)
         {
-            IClientTransport transport;
-            if (!String.IsNullOrEmpty(mcpServer?.Url?.AbsoluteUri))
-            {
-                transport = GetSseTransport(mcpServer);
-            }
-            else if (!String.IsNullOrEmpty(mcpServer?.Command) && mcpServer?.Arguments != null)
-            {
-                transport = GetStdioTransport(mcpServer);
-            }
-            else
-            {
-                throw new Exception("MCP server configuration is not valid. Either URL or Command must be set.");
-            }
-
-            return transport;
-        }
-
-        private static IClientTransport GetStdioTransport(Daenet.LLMPlugin.TestConsole.Entities.McpServer mcpServer)
-        {
-            IClientTransport transport;
             var opts = new StdioClientTransportOptions
             {
-                Name = GetDefaultMCPServerName(mcpServer!),
+                Name = GetDefaultMcpServerName(mcpServer!),
                 Command = mcpServer?.Command!,
                 Arguments = JsonSerializer.Deserialize<string[]>(mcpServer?.Arguments!),
             };
-
-            transport = new StdioClientTransport(opts);
-            return transport;
+            return new StdioClientTransport(opts);
         }
 
-        private static IClientTransport GetSseTransport(Daenet.LLMPlugin.TestConsole.Entities.McpServer mcpServer)
+        private static IClientTransport GetSseTransport(McpServer mcpServer)
         {
-            IClientTransport transport;
-            HttpClientTransportOptions opts = new HttpClientTransportOptions
+            var opts = new HttpClientTransportOptions
             {
                 TransportMode = HttpTransportMode.AutoDetect,
-                Name = GetDefaultMCPServerName(mcpServer),
+                Name = GetDefaultMcpServerName(mcpServer),
                 Endpoint = mcpServer.Url!,
                 AdditionalHeaders = new Dictionary<string, string>()
             };
@@ -207,19 +164,13 @@ namespace Daenet.LLMPlugin.TestConsole
                 opts.AdditionalHeaders.Add("ApiKey", mcpServer.ApiKey);
 
                 if (!string.IsNullOrEmpty(mcpServer.ImpersonatingUser))
-                {
                     opts.AdditionalHeaders.Add("ImpersonatingUser", mcpServer.ImpersonatingUser);
-                }
             }
 
-            transport = new HttpClientTransport(opts);
-            return transport;
+            return new HttpClientTransport(opts);
         }
 
-        private static string GetDefaultMCPServerName(Daenet.LLMPlugin.TestConsole.Entities.McpServer mcpServer)
-        {
-            return mcpServer.Name ?? $"MCP Server {mcpServer.Url}";
-        }
+        private static string GetDefaultMcpServerName(McpServer mcpServer)
+            => mcpServer.Name ?? $"MCP Server {mcpServer.Url}";
     }
-
 }

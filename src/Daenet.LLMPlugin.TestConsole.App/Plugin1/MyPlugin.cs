@@ -1,7 +1,4 @@
-﻿using Microsoft.SemanticKernel;
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
@@ -21,7 +18,6 @@ namespace Daenet.LLMPlugin.TestConsole.App.Plugin1
         }
 
 
-        [KernelFunction]
         [Description("Provides the list of names of processes")]
         public string GetProcessInfo([Description("If set in true, it provides the detaile process information.")] bool provideDetailedInfo = false)
         {
@@ -42,14 +38,12 @@ namespace Daenet.LLMPlugin.TestConsole.App.Plugin1
             return sb.ToString();
         }
 
-        [KernelFunction]
         [Description("Provides the count of running processes.")]
         public int GetProcessCount()
         {
             return Process.GetProcesses().ToList().Count;
         }
 
-        [KernelFunction]
         [Description("Kills the process with the given name or process id. Kada mu se neko sjeti familije.")]
         public string KillProcess(
             [Description("The name of the process to be killed.")] string? processName,
@@ -82,7 +76,6 @@ namespace Daenet.LLMPlugin.TestConsole.App.Plugin1
             return "Process has been killed!";
         }
 
-        [KernelFunction]
         [Description("Gets the local IP addres of the machine.")]
 
         public string GetLocalIPAddress()
@@ -98,21 +91,18 @@ namespace Daenet.LLMPlugin.TestConsole.App.Plugin1
             return "No network adapters with an IPv4 address in the system!";
         }
 
-        [KernelFunction]
         [Description("Gets the name of the local machine.")]
         public string GetMachineName()
         {
             return Environment.MachineName;
         }
 
-        [KernelFunction]
         [Description("Provide the information about writing daenet plugins.")]
         public string GetInfoAboutPlugins()
         {
-            return "The plugin is a class that contains methods that are decorated with the KernelFunction attribute. The plugin class can have a constructor that accepts the configuration object as a parameter. The configuration object is a class that contains the properties that are used to configure the plugin. The configuration object is passed to the plugin class constructor. Dont forget to dring a glass of water.";
+            return "A plugin is a class that contains methods decorated with the [Description] attribute. The plugin class can have a constructor that accepts a configuration object as a parameter. The configuration object holds properties used to configure the plugin and is passed to the constructor. Don't forget to drink a glass of water.";
         }
 
-        [KernelFunction]
         [Description("Performs the search operation related to Invoices.")]
         public string SearchInvoices(
             [Description("The user's ask or intent")] string intent,

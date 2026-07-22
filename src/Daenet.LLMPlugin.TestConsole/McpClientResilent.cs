@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Daenet.LLMPlugin.TestConsole
@@ -12,6 +13,8 @@ namespace Daenet.LLMPlugin.TestConsole
     public class McpClientResilent : McpClient
     {
         private Task? _retryingWorkerTask;
+
+        private readonly CancellationTokenSource _retryingWorkerCancellationTokenSource;
 
         private McpClient? _mcpClient;
 
@@ -66,27 +69,42 @@ namespace Daenet.LLMPlugin.TestConsole
         public bool IsConnected { get; private set; }
 
 
-        public override string? NegotiatedProtocolVersion => throw new NotImplementedException();
+        public override string? NegotiatedProtocolVersion
+        {
+            get
+            {
+                ThrowIfNotConnected();
+                return _mcpClient!.NegotiatedProtocolVersion;
+            }
+        }
 
-    
+        public override Task<ClientCompletionDetails> Completion
+        {
+            get
+            {
+                ThrowIfNotConnected();
+                return _mcpClient!.Completion;
+            }
+        }
 
         public void SetOnConnectionStateChangedDelegate(Action<bool> onConnectionStateChanged)
         {
             _onConnectionStateChanged = onConnectionStateChanged;
         }
 
+#pragma warning disable MCPEXP002 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
         private McpClientResilent(McpClient? underlyingMcpClient,
             IClientTransport transport, McpClientOptions options,
             ILogger<McpClientResilent>? logger = null)
         {
             _mcpClient = underlyingMcpClient;
-
             _transport = transport;
-
             _options = options;
-
-            _retryingWorkerTask = RunRetryingWorkerAsync(CancellationToken.None);
+            _logger = logger;
+            _retryingWorkerCancellationTokenSource = new CancellationTokenSource();
+            _retryingWorkerTask = RunRetryingWorkerAsync(_retryingWorkerCancellationTokenSource.Token);
         }
+#pragma warning restore MCPEXP002 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 
         public static async Task<McpClient> CreateAsync(IClientTransport transport, McpClientOptions options,
             ILogger<McpClientResilent>? mcpClientLogger = null)
@@ -97,7 +115,7 @@ namespace Daenet.LLMPlugin.TestConsole
             {
                 mcpClient = await McpClient.CreateAsync(transport!, options);
             }
-            catch (Exception ex)
+            catch
             {
                 mcpClientLogger?.LogWarning($"Ping to the MCP Server '{options?.ClientInfo?.Name}' has failed.");
             }
@@ -107,12 +125,28 @@ namespace Daenet.LLMPlugin.TestConsole
             return resilentClient;
         }
 
-        public override ValueTask DisposeAsync()
+        public override async ValueTask DisposeAsync()
         {
-            if (_mcpClient == null)
-                return ValueTask.CompletedTask;
+            _retryingWorkerCancellationTokenSource.Cancel();
 
-            return _mcpClient.DisposeAsync();
+            if (_retryingWorkerTask != null)
+            {
+                try
+                {
+                    await _retryingWorkerTask;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            if (_mcpClient != null)
+            {
+                await _mcpClient.DisposeAsync();
+                _mcpClient = null;
+            }
+
+            IsConnected = false;
         }
 
         public override IAsyncDisposable RegisterNotificationHandler(string method, Func<JsonRpcNotification, CancellationToken, ValueTask> handler)
@@ -145,11 +179,16 @@ namespace Daenet.LLMPlugin.TestConsole
 
         protected async Task RunRetryingWorkerAsync(CancellationToken cancelationToken)
         {
-            while (cancelationToken.IsCancellationRequested == false)
+            try
             {
-                await PingOrReconnectClient();
-
-                await Task.Delay(10000);
+                while (cancelationToken.IsCancellationRequested == false)
+                {
+                    await PingOrReconnectClient();
+                    await Task.Delay(10000, cancelationToken);
+                }
+            }
+            catch (OperationCanceledException)
+            {
             }
         }
 

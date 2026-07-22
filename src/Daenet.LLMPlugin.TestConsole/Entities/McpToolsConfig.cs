@@ -13,6 +13,7 @@ namespace Daenet.LLMPlugin.TestConsole.Entities
     /// </summary>
     public class McpToolsConfig
     {
+
         /// <summary>   
         /// The list of MCP servers to be used as MCP imported tools.
         /// </summary>
