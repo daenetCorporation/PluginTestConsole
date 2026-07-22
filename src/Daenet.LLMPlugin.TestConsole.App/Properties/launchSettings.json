@@ -3,10 +3,10 @@
     "Daenet.PluginTestConsole.App": {
       "commandName": "Project",
       "environmentVariables": {
-        "OPENAI_CHATCOMPLETION_DEPLOYMENT": "gpt-4o",
-        "OPENAI_EMBEDDING_DEPLOYMENT": "",
-        "OPENAI_API_KEY": "",
-        "OPENAI_ORGID": "",
+        "-OPENAI_CHATCOMPLETION_DEPLOYMENT": "gpt-4o",
+        "-OPENAI_EMBEDDING_DEPLOYMENT": "",
+        "-OPENAI_API_KEY": "",
+        "-OPENAI_ORGID": "",
 
         "-AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "",
         "-AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT": "gpt-4o",
