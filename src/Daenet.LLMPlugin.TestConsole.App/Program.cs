@@ -1,5 +1,6 @@
 ﻿
 using Daenet.ClawLib;
+using System.Linq;
 using Daenet.LLMPlugin.Common;
 using Daenet.LLMPlugin.TestConsole.Entities;
 using Microsoft.Agents.AI;
@@ -77,11 +78,9 @@ namespace Daenet.LLMPlugin.TestConsole.App
 
             var clawSession = ClawSession.FromEnvironment(tools);
 
-            await testConsole.ImportToolsAsync(tools, clawSession.AgentSession, mcpLogger);
+            await testConsole.ImportToolsAsync(tools, mcpLogger);
 
-            var agent = await clawSession.InitializeAsync();
-
-           
+            var agent = await clawSession.InitializeAsync();           
 
             await testConsole.RunAsync(agent, clawSession.AgentSession, mcpLogger);
 
@@ -155,7 +154,7 @@ namespace Daenet.LLMPlugin.TestConsole.App
 
             AgentSession agentSession = await tempAgent.CreateSessionAsync();
 
-            await testConsole.ImportToolsAsync(tools, agentSession, mcpLogger);
+            await testConsole.ImportToolsAsync(tools, mcpLogger);
 
             // Create the final agent with all loaded tools
             AIAgent agent = agentChannel.AsAIAgent(

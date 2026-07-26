@@ -136,11 +136,6 @@ namespace Daenet.ClawLib
                     Each step will be executed by a Task Agent that has access to the following tools:
                     {taskToolList}
                     After execution, summarize the results of all steps to the user.
-
-                    For CLI-only plans where all steps are simple CLI commands, you may alternatively
-                    call {nameof(RunCommandLineAsync)} to build an Agent Framework Workflow with one Executor per step.
-
-                    When executing CLI execute them via CMD with '/c <command>' or PowerShell with '-NoProfile -Command <cmd>'. You cannot directly call CLI tools like 'git' or 'dotnet' - they must be invoked through cmd or pwsh to ensure proper execution and output capture.
                     """,
                 name: "PlanAgent",
                 tools: [
@@ -155,19 +150,22 @@ namespace Daenet.ClawLib
 
                     1. Analyze the user's intent carefully.
                     2. Decompose it into a sequential plan of concrete steps.
-                    3. Call the {nameof(intentOrchestrator.CreateAndExecutePlanAsync)} tool ONCE with the list of steps.
+                    3. If the user intent is simple and does not requieres a plan or some CLI and you have tools available which can execute it, the use the tool to execute the task.
+                    4. Call the {nameof(intentOrchestrator.CreateAndExecutePlanAsync)} tool ONCE with the list of steps.
                        Each step must have:
                        - 'instructions': detailed instructions for executing this specific step,
                          including the exact command, tool, or action to perform.
                        - 'description': a brief human-readable summary of what this step does.
                        - 'type': either "cli", "browser", or "reasoning" to classify the step.
-                    4. After the plan executes, summarize the results to the user.
+                    5. After the plan executes, summarize the results to the user.
 
                     Be thorough in your decomposition. Each step should be atomic and self-contained.
                     Include any installation or prerequisite steps if needed.
 
                     IMPORTANT: Never plan destructive commands (rm -rf, format, del /s, etc.) without 
                     making it clear what will be deleted.
+                    List of available tools:
+                    {taskToolList}
                     """,
                 name: "IntentAgent",
                 tools: [AIFunctionFactory.Create(intentOrchestrator.CreateAndExecutePlanAsync)]);

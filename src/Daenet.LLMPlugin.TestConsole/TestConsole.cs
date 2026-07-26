@@ -52,6 +52,8 @@ namespace Daenet.LLMPlugin.TestConsole
         /// </summary>
         public async Task RunAsync(AIAgent agent, AgentSession sess, ILogger<McpClientResilent> mcpLogger)
         {
+            _testConsolePlugin.Session = sess;
+
             var clr = ConsoleColor.White;
             Console.ForegroundColor = clr;
 
@@ -84,11 +86,13 @@ namespace Daenet.LLMPlugin.TestConsole
             }
         }
 
-        public async Task ImportToolsAsync(List<AITool> tools, AgentSession session, ILogger<McpClientResilent> mcpLogger)
+        private TestConsolePlugin _testConsolePlugin;
+
+        public async Task ImportToolsAsync(List<AITool> tools, ILogger<McpClientResilent> mcpLogger)
         {
             // Built-in console management plugin.
-            var consolePlugin = new TestConsolePlugin(tools, session, _consoleCfg);
-            AddObjectToTools(tools, consolePlugin);
+            _testConsolePlugin = new TestConsolePlugin(tools, _consoleCfg);
+            AddObjectToTools(tools, _testConsolePlugin);
 
             // Dynamically configured plugins from appsettings.
             var pluginInstances = _pluginMgr.CreateRequiredPlugins();

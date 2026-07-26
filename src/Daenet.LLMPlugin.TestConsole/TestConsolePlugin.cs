@@ -12,16 +12,17 @@ namespace Daenet.LLMPlugin.TestConsole
     /// Built-in agent plugin for managing the console session.
     /// Methods decorated with [Description] are automatically registered as AIFunction tools.
     /// </summary>
-    internal class TestConsolePlugin
+    public class TestConsolePlugin
     {
         private readonly IList<AITool> _tools;
-        private readonly AgentSession _session;
+        private  AgentSession? _session;
         private readonly TestConsoleConfig _config;
 
-        public TestConsolePlugin(IList<AITool> tools, AgentSession session, TestConsoleConfig config)
+        public AgentSession? Session { get => _session; set => _session = value; }
+
+        public TestConsolePlugin(IList<AITool> tools, TestConsoleConfig config)
         {
             _tools = tools;
-            _session = session;
             _config = config;
         }
 
@@ -34,7 +35,7 @@ namespace Daenet.LLMPlugin.TestConsole
         [Description("This method deletes all messages in the conversation history. Clears message history in the chat conversation. It does not clear console messages.")]
         public void ClearMessageHistory()
         {
-            if (_session.TryGetInMemoryChatHistory(out var history))
+            if (Session != null && Session.TryGetInMemoryChatHistory(out var history))
                 history.Clear();
         }
 
