@@ -44,6 +44,12 @@
 	<ItemGroup>
 	  <ProjectReference Include="..\Daenet.LLMPlugin.Common\Daenet.LLMPlugin.Common.csproj" />
 	</ItemGroup>
+	
+	<ItemGroup>
+	  <None Update="Skills\azure-sql-bacpac-migration\SKILL.md">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </None>
+	</ItemGroup>
 
 	
 

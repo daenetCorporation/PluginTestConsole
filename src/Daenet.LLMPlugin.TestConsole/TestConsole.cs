@@ -72,7 +72,31 @@ namespace Daenet.LLMPlugin.TestConsole
                     var response = await agent.RunAsync(userInput, sess);
 
                     Console.ForegroundColor = _consoleCfg.AssistentMessageColor;
-                    Console.WriteLine("Assistant > " + response.Text);
+
+                    List<ToolApprovalRequestContent> approvalRequests = response.Messages
+    .SelectMany(m => m.Contents)
+    .OfType<ToolApprovalRequestContent>()
+    .ToList();
+
+                    while (approvalRequests.Count > 0)
+                    {
+                        List<ChatMessage> userInputResponses = approvalRequests
+                            .ConvertAll(request =>
+                            {
+                                var toolCall = (FunctionCallContent)request.ToolCall;
+                                Console.WriteLine($"Approve {toolCall.Name}? (Y/N)");
+                                bool approved = Console.ReadLine()?.Equals("Y", StringComparison.OrdinalIgnoreCase) ?? false;
+                                return new ChatMessage(ChatRole.User, [request.CreateResponse(approved)]);
+                            });
+
+                        response = await agent.RunAsync(userInputResponses, sess);
+                        approvalRequests = response.Messages
+                            .SelectMany(m => m.Contents)
+                            .OfType<ToolApprovalRequestContent>()
+                            .ToList();
+
+                        Console.WriteLine("Assistant > " + response.Text);
+                    }
                 }
                 catch (Exception ex)
                 {

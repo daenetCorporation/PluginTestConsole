@@ -40,6 +40,29 @@ namespace Daenet.LLMPlugin.TestConsole
         }
 
 
+
+
+        [Description("Loads the prompt (instruction s) from file and sets it as the current system message.")]
+        public async Task<string> LoadPromptfromFileAsync(
+            [Description("Path to the prompt file.")] string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+                return "The file path is empty.";
+
+            if (!File.Exists(filePath))
+                return $"Prompt file not found: {filePath}";
+
+            var promptText = await File.ReadAllTextAsync(filePath);
+
+            if (string.IsNullOrWhiteSpace(promptText))
+                return $"Prompt file is empty: {filePath}";
+
+            _config.SystemMessage = promptText;
+            return $"Loaded prompt from '{filePath}' ({promptText.Length} chars).";
+        }
+
+
+
         [Description("Gets the current date and time.")]
         public string GetDateTime(
             [Description("Provides detailed information about the date and time, including month, week, and day details.")] bool details = false)

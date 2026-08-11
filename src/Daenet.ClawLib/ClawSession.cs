@@ -3,6 +3,7 @@ using Daenet.ClawLib.Entities;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
@@ -84,14 +85,14 @@ namespace Daenet.ClawLib
             => new(
                 apiKey: Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY")
                                              ?? throw new InvalidOperationException("AZURE_OPENAI_API_KEY is not set."),
-                deploymentChatModel: Environment.GetEnvironmentVariable("AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT") ?? "gpt-4o",
+                deploymentChatModel: Environment.GetEnvironmentVariable("AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT") ?? "gpt-5.4",
                 deploymentEmbeddingModel: Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT") ?? "text-embedding-3-small",
                 endpoint: Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
                                              ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set."),
                 tools: tools
             );
 
-        public async Task<AIAgent> InitializeAsync()
+        public async Task<AIAgent> InitializeAsync(ILoggerFactory? loggerFactory)
         {
             var endpoint = _endpoint;
             var deploymentName = _deploymentChatModel;
@@ -117,58 +118,114 @@ namespace Daenet.ClawLib
             var taskToolList = string.Join(Environment.NewLine, taskTools.Select(tool =>
                 $"- Name: {tool.Name}{(string.IsNullOrWhiteSpace(tool.Description) ? string.Empty : $"{Environment.NewLine}  Description: {tool.Description}")}"));
 
+            var opts = new AgentSkillsProviderOptions()
+            {
+               DisableRunSkillScriptApproval = true,
+                 IncludeDetailedErrors = true,
+            };
+
+            var fileOptions = new AgentFileSkillsSourceOptions
+            {
+                AllowedResourceExtensions = [".md", ".txt", ".py", ".jpg", ".json"],
+            };
+
+
+            // --- Skills Provider ---
+            // Discovers skills from the 'skills' directory containing SKILL.md files.
+            // The script runner runs file-based scripts (e.g. Python) as local subprocesses.
+            var skillsProvider = new AgentSkillsProvider(
+                Path.Combine(AppContext.BaseDirectory, "Skills"),
+                SubprocessScriptRunner.RunAsync,
+                loggerFactory: loggerFactory,
+                options: opts,
+                fileOptions: fileOptions);
+
+      
+            var taskAgentOptions = new ChatClientAgentOptions
+            {
+                Name = "TaskAgent",
+                Description = "Task execution agent running on Windows.",
+                ChatOptions = new ChatOptions
+                {
+                    Instructions = """
+                        You are a task execution agent running on Windows. You receive a specific task to execute
+                        along with context from previous steps. Execute the task using the best of available tools and skills.
+                        Always return a clear, concise result describing what was done and the output.
+                        If execution fails, explain the error and suggest alternatives.
+                        """,
+                    Tools = taskTools,
+                },
+                //AIContextProviders = [skillsProvider],
+            };
+
             AIAgent taskAgent = chatClient.AsAIAgent(
-                instructions: """
-                    You are a task execution agent running on Windows. You receive a specific task to execute
-                    along with context from previous steps. Execute the task using the best of available tools.
-                    Always return a clear, concise result describing what was done and the output.
-                    If execution fails, explain the error and suggest alternatives.
-                    """,
-                name: "TaskAgent",
-                tools: taskTools);
+                options: taskAgentOptions,
+                loggerFactory: loggerFactory);
 
             var planOrchestrator = new PlanOrchestrator(taskAgent);
 
+            var planAgentOptions = new ChatClientAgentOptions
+            {
+                Name = "PlanAgent",
+                Description = "Plan orchestration agent.",
+                ChatOptions = new ChatOptions
+                {
+                    Instructions = $"""
+                        You are a plan orchestration agent. You receive a plan (a list of steps) and execute
+                        them sequentially by calling the {nameof(planOrchestrator.ExecutePlanAsync)} tool ONCE with the complete plan.
+                        Each step will be executed by a Task Agent that has access to the following tools:
+                        {taskToolList} and any skills loaded from the Skills directory.
+                        After execution, summarize the results of all steps to the user.
+                        """,
+                    Tools = [
+                        AIFunctionFactory.Create(planOrchestrator.ExecutePlanAsync),
+                    ],
+                },
+                //AIContextProviders = [skillsProvider],
+            };
+
             AIAgent planAgent = chatClient.AsAIAgent(
-                instructions: $"""
-                    You are a plan orchestration agent. You receive a plan (a list of steps) and execute
-                    them sequentially by calling the {nameof(planOrchestrator.ExecutePlanAsync)} tool ONCE with the complete plan.
-                    Each step will be executed by a Task Agent that has access to the following tools:
-                    {taskToolList}
-                    After execution, summarize the results of all steps to the user.
-                    """,
-                name: "PlanAgent",
-                tools: [
-                    AIFunctionFactory.Create(planOrchestrator.ExecutePlanAsync),
-                ]);
+                options: planAgentOptions,
+                loggerFactory: loggerFactory);
 
             var intentOrchestrator = new IntentOrchestrator(planAgent);
 
+            var intentAgentOptions = new ChatClientAgentOptions
+            {
+                Name = "IntentAgent",
+                Description = "Intent analysis and planning agent.",
+                ChatOptions = new ChatOptions
+                {
+                    Instructions = $"""
+                        You are an intent analysis agent running on Windows. When the user describes a task:
+
+                        1. Analyze the user's intent carefully.
+                        2. Decompose it into a sequential plan of concrete steps.
+                        3. If the user intent is simple and does not requieres a plan or some CLI and you have tools available which can execute it, the use the tool to execute the task.
+                        4. Call the {nameof(intentOrchestrator.CreateAndExecutePlanAsync)} tool ONCE with the list of steps.
+                           Each step must have:
+                           - 'instructions': detailed instructions for executing this specific step,
+                             including the exact command, tool, or action to perform.
+                           - 'description': a brief human-readable summary of what this step does.
+                           - 'type': either "cli", "browser", or "reasoning" to classify the step.
+                        5. After the plan executes, summarize the results to the user.
+
+                        Be thorough in your decomposition. Each step should be atomic and self-contained.
+                        Include any installation or prerequisite steps if needed.
+
+                        IMPORTANT: Never plan destructive commands (rm -rf, format, del /s, etc.) without 
+                        making it clear what will be deleted.
+                        List of available tools:
+                        {taskToolList}
+                        """,
+                    Tools = [AIFunctionFactory.Create(intentOrchestrator.CreateAndExecutePlanAsync)],
+                },
+                AIContextProviders = [skillsProvider],
+            };
+
             AIAgent intentAgent = chatClient.AsAIAgent(
-                instructions: $"""
-                    You are an intent analysis agent running on Windows. When the user describes a task:
-
-                    1. Analyze the user's intent carefully.
-                    2. Decompose it into a sequential plan of concrete steps.
-                    3. If the user intent is simple and does not requieres a plan or some CLI and you have tools available which can execute it, the use the tool to execute the task.
-                    4. Call the {nameof(intentOrchestrator.CreateAndExecutePlanAsync)} tool ONCE with the list of steps.
-                       Each step must have:
-                       - 'instructions': detailed instructions for executing this specific step,
-                         including the exact command, tool, or action to perform.
-                       - 'description': a brief human-readable summary of what this step does.
-                       - 'type': either "cli", "browser", or "reasoning" to classify the step.
-                    5. After the plan executes, summarize the results to the user.
-
-                    Be thorough in your decomposition. Each step should be atomic and self-contained.
-                    Include any installation or prerequisite steps if needed.
-
-                    IMPORTANT: Never plan destructive commands (rm -rf, format, del /s, etc.) without 
-                    making it clear what will be deleted.
-                    List of available tools:
-                    {taskToolList}
-                    """,
-                name: "IntentAgent",
-                tools: [AIFunctionFactory.Create(intentOrchestrator.CreateAndExecutePlanAsync)]);
+                options: intentAgentOptions,
+                loggerFactory: loggerFactory);
 
             AgentSession = await intentAgent.CreateSessionAsync();
 

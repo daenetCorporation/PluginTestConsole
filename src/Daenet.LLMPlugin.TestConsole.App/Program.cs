@@ -80,7 +80,15 @@ namespace Daenet.LLMPlugin.TestConsole.App
 
             await testConsole.ImportToolsAsync(tools, mcpLogger);
 
-            var agent = await clawSession.InitializeAsync();           
+            //var logFact = serviceProvider.GetRequiredService<ILoggerFactory>();
+
+            using ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
+            {
+                builder.AddConsole();
+                builder.SetMinimumLevel(LogLevel.Debug);
+            });
+
+            var agent = await clawSession.InitializeAsync(loggerFactory);           
 
             await testConsole.RunAsync(agent, clawSession.AgentSession, mcpLogger);
 
