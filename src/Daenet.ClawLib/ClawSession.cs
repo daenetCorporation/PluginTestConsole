@@ -1,3 +1,4 @@
+using Anthropic;
 using Azure.AI.OpenAI;
 using Daenet.ClawLib.Entities;
 using Microsoft.Agents.AI;
@@ -73,6 +74,12 @@ namespace Daenet.ClawLib
         }
 
         /// <summary>
+        /// Creates a <see cref="ClawSession"/> from explicit configuration values.
+        /// </summary>
+        public static ClawSession Create(string apiKey, string deploymentChatModel, string deploymentEmbeddingModel, string endpoint, List<AITool> tools)
+            => new(apiKey, deploymentChatModel, deploymentEmbeddingModel, endpoint, tools);
+
+        /// <summary>
         /// Creates a <see cref="ClawSession"/> by reading connection settings from environment variables:
         /// <list type="bullet">
         ///   <item>AZURE_OPENAI_API_KEY</item>
@@ -85,28 +92,50 @@ namespace Daenet.ClawLib
             => new(
                 apiKey: Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY")
                                              ?? throw new InvalidOperationException("AZURE_OPENAI_API_KEY is not set."),
-                deploymentChatModel: Environment.GetEnvironmentVariable("AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT") ?? "gpt-5.4",
+                deploymentChatModel: Environment.GetEnvironmentVariable("AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT") ?? "gpt-5.4", //""claude-sonnet-5",
                 deploymentEmbeddingModel: Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT") ?? "text-embedding-3-small",
                 endpoint: Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
                                              ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set."),
                 tools: tools
             );
 
+        public IChatClient CreateClient()
+        {
+            if (IsAnthropicDeployment(_deploymentChatModel))
+            {
+                return CreateAnthropicClient();
+            }
+
+            return new AzureOpenAIClient(
+                new Uri(_endpoint),
+                new Azure.AzureKeyCredential(_apiKey))
+                .GetChatClient(_deploymentChatModel)
+                .AsIChatClient();
+        }
+
+        private IChatClient CreateAnthropicClient()
+        {
+            var anthropicClient = new AnthropicClient
+            {
+                ApiKey = _apiKey
+            };
+
+            return anthropicClient.AsIChatClient(_deploymentChatModel);
+        }
+
+        private static bool IsAnthropicDeployment(string deploymentName)
+            => deploymentName.Contains("claude", StringComparison.OrdinalIgnoreCase)
+            || deploymentName.Contains("anthropic", StringComparison.OrdinalIgnoreCase);
+
         public async Task<AIAgent> InitializeAsync(ILoggerFactory? loggerFactory)
         {
-            var endpoint = _endpoint;
-            var deploymentName = _deploymentChatModel;
 
             Console.OutputEncoding = Encoding.Unicode;
             Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.WriteLine($"{_aiTools.Count()} tool(s) available");
             Console.ResetColor();
 
-            IChatClient chatClient = new AzureOpenAIClient(
-                new Uri(endpoint),
-                new Azure.AzureKeyCredential(_apiKey))
-                .GetChatClient(deploymentName)
-                .AsIChatClient();
+            IChatClient chatClient = CreateClient();
 
             AITool[] taskTools = [
                 AIFunctionFactory.Create(ExecuteCliCommandAsync),
@@ -152,6 +181,7 @@ namespace Daenet.ClawLib
                         along with context from previous steps. Execute the task using the best of available tools and skills.
                         Always return a clear, concise result describing what was done and the output.
                         If execution fails, explain the error and suggest alternatives.
+                        Always provide the complete error message if available.
                         """,
                     Tools = taskTools,
                 },
@@ -174,7 +204,7 @@ namespace Daenet.ClawLib
                         You are a plan orchestration agent. You receive a plan (a list of steps) and execute
                         them sequentially by calling the {nameof(planOrchestrator.ExecutePlanAsync)} tool ONCE with the complete plan.
                         Each step will be executed by a Task Agent that has access to the following tools:
-                        {taskToolList} and any skills loaded from the Skills directory.
+                        {taskToolList} and any available skills. Create execution steps that uses tasks, which can be executed by available tools and skills and yoir knowledge.
                         After execution, summarize the results of all steps to the user.
                         """,
                     Tools = [
@@ -202,13 +232,15 @@ namespace Daenet.ClawLib
                         1. Analyze the user's intent carefully.
                         2. Decompose it into a sequential plan of concrete steps.
                         3. If the user intent is simple and does not requieres a plan or some CLI and you have tools available which can execute it, the use the tool to execute the task.
-                        4. Call the {nameof(intentOrchestrator.CreateAndExecutePlanAsync)} tool ONCE with the list of steps.
+                        4. Use also skills if available to create required tasks.If skill is used, it should be executed atomicaly without plan.
+                        5. If the plan involves one or more skills, execution of every skill is atomic task. Do not try to plan tasks owned by the skill.
+                        6. Call the {nameof(intentOrchestrator.CreateAndExecutePlanAsync)} tool ONCE with the list of steps.
                            Each step must have:
                            - 'instructions': detailed instructions for executing this specific step,
                              including the exact command, tool, or action to perform.
                            - 'description': a brief human-readable summary of what this step does.
                            - 'type': either "cli", "browser", or "reasoning" to classify the step.
-                        5. After the plan executes, summarize the results to the user.
+                        7. After the plan executes, summarize the results to the user.
 
                         Be thorough in your decomposition. Each step should be atomic and self-contained.
                         Include any installation or prerequisite steps if needed.
@@ -265,10 +297,13 @@ namespace Daenet.ClawLib
         /// </summary>
         [Description("Execute any CLI command or PowerShell command. Use 'cmd' with '/c <command>' or 'pwsh' with '-NoProfile -Command <cmd>'.")]
         static async Task<string> ExecuteCliCommandAsync(
+             [Description("A short description of the task being executed.")] string shortDescriptionOfTask,
              [Description("The executable to run (e.g. 'cmd', 'pwsh', 'git', 'dotnet').")] string executable,
-             [Description("The arguments to pass to the executable.")] string arguments)
+             [Description("The arguments to pass to the executable.")] string arguments,
+             [Description("The timeout in milliseconds for the command to complete.")] int timeoutMs = 60000)
         {
             Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.WriteLine($"│   Task: {shortDescriptionOfTask}");
             Console.WriteLine($"│   CLI: {executable} {arguments}");
             Console.ResetColor();
 
@@ -324,7 +359,7 @@ namespace Daenet.ClawLib
                 if (!exited)
                 {
                     process.Kill(entireProcessTree: true);
-                    return $"ERROR: Command timed out after 60 seconds.\nPartial output:\n{Truncate(stdout, 2000)}";
+                    return $"ERROR: Command timed out after {timeoutMs / 1000} seconds.\nPartial output:\n{Truncate(stdout, 2000)}";
                 }
 
                 StringBuilder result = new();

@@ -93,10 +93,10 @@ namespace Daenet.LLMPlugin.TestConsole
                         approvalRequests = response.Messages
                             .SelectMany(m => m.Contents)
                             .OfType<ToolApprovalRequestContent>()
-                            .ToList();
-
-                        Console.WriteLine("Assistant > " + response.Text);
+                            .ToList();                        
                     }
+
+                    Console.WriteLine("Assistant > " + response.Text);
                 }
                 catch (Exception ex)
                 {

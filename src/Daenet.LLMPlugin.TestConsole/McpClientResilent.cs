@@ -250,5 +250,9 @@ namespace Daenet.LLMPlugin.TestConsole
             _logger?.LogTrace($"MCP Server '{mcpClient.ServerInfo.Title}' available.");
         }
 
+        public override ValueTask<IDictionary<string, InputResponse>> ResolveInputRequestsAsync(IDictionary<string, InputRequest> inputRequests, CancellationToken cancellationToken)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

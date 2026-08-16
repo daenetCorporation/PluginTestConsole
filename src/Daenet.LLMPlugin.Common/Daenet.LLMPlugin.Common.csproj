@@ -19,7 +19,7 @@
 	<ItemGroup>
 
 	
-		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="11.0.0-preview.7.26381.103" />
 	</ItemGroup>
 	
 </Project>

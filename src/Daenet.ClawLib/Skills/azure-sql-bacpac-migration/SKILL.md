@@ -1,138 +1,89 @@
 ---
 name: azure-sql-bacpac-migration
-description: Export an Azure SQL Database to a BACPAC file in Azure Blob Storage (schema, data, and database-level accounts/users) and restore it to a target Azure SQL Server. Use this skill whenever the user asks to migrate, copy, clone, back up, export, or restore an Azure SQL Database via BACPAC/blob storage, or mentions moving a database "to blob storage and back", refreshing a database from a snapshot, or re-platforming a SQL Server database within Azure. Trigger even if the user only says "export my database to blob storage" or "restore this database to the server" without using the word "migration".
+description: >
+  Migrates an Azure SQL Database from one subscription/server to another using the Azure CLI (az sql db export/import) via a BACPAC staged in Blob Storage. Use this skill whenever the user wants to move, migrate, or copy an Azure SQL Database across subscriptions or servers, mentions BACPAC export/import, or provides migration parameters with SOURCE_/TARGET_ fields. Handles export to blob, creating the target database with matching edition/service tier/collation, importing schema and data, and optionally recreating SQL server logins on the target, since logins are not part of a .bacpac. Trigger even if the user just says "migrate my Azure SQL database to another subscription" without mentioning BACPAC by name.
 ---
 
-# Azure SQL Database Migration via BACPAC (Export → Blob Storage → Import)
+# Azure SQL BACPAC Migration
 
-## Overview
-
-This skill performs a two-phase logical migration of an Azure SQL Database:
-
-1. **Export**: `database1` on `sqlserver1` → a `.bacpac` file in an Azure Blob Storage container. A BACPAC captures schema, data, and **database-level** principals (contained users, roles, permissions).
-2. **Import**: the same `.bacpac` file → a (re)created database on the target Azure SQL logical server (by default, back onto `sqlserver1`).
-
-This is a **logical** export/import (via `DACFx`), not a file-level backup/restore. It is the correct tool for: moving a DB between servers/subscriptions/regions, cloning a DB for test/dev, or archiving a point-in-time copy to blob storage. It is **not** a substitute for Point-in-Time Restore or geo-restore, and it is slower than those for large databases.
-
-## Critical caveat: "accounts" and logins are NOT fully covered by BACPAC
-
-Read this before telling the user the migration is complete — this is the most common source of a "successful" migration that then fails for end users.
-
-- A BACPAC **does** include *contained database users* (users with passwords stored in the database itself, `CREATE USER ... WITH PASSWORD`) and their role memberships/permissions.
-- A BACPAC **does NOT** include *server-level logins* (`CREATE LOGIN`) or Entra ID (Azure AD) server-level admins/logins, and it does NOT include SQL Agent jobs, linked servers, or server-level firewall rules.
-- If `database1`'s users are mapped to server logins on `sqlserver1` (the typical non-contained setup), those users will import as "orphaned users" on the target — they exist in the DB but have no matching login on the target server, and logins will fail.
-
-**Always ask the user (or check yourself) whether database users are contained users or server-login-mapped users before treating the migration as done.** Step 4 below covers how to detect and fix orphaned users. If the target is the *same* server (`sqlserver1`) and the logins therefore already exist there, orphaned users can usually be re-linked automatically; if the target is a *different* server, the logins must be recreated first.
-
-Here's a prerequisites section you can drop at the top of your migration prompt/script, with the variable names only — no actual values included:
-
+Moves an Azure SQL Database between subscriptions/servers via BACPAC export/import,
+driven entirely by a single parameter file (never hardcode credentials into scripts
+or into chat output).
 
 ## Prerequisites
 
-Before running this script, ensure the following variables are provided by user.
+- Azure CLI installed and logged in (`az login`), with access to both the source and
+  target subscriptions.
+- The **target logical server must already exist** (this skill does not create SQL
+  servers, only databases). If it doesn't exist yet, run `az sql server create` first.
+- A storage account (any account/container works) used as a staging area for the
+  `.bacpac` file. It can be in either subscription.
+- For login migration (step 4 only): `sqlcmd` on PATH (mssql-tools18).
 
-### Source Environment
-- `SOURCE_SUBSCRIPTION_ID` — Azure subscription ID hosting the source database
-- `SOURCE_RESOURCE_GROUP` — Resource group containing the source SQL server
-- `SOURCE_SERVER_NAME` — Fully qualified source SQL server name (e.g. `<name>.database.windows.net`)
-- `SOURCE_DATABASE_NAME` — Name of the source database to migrate
-- `SOURCE_SQL_ADMIN_USER` — SQL admin username for the source server
-- `SOURCE_SQL_ADMIN_PASSWORD` — SQL admin password for the source server
+## Step 0: Get the parameters from the user
 
-### Target Environment
-- `TARGET_SUBSCRIPTION_ID` — Azure subscription ID hosting the target database
-- `TARGET_RESOURCE_GROUP` — Resource group containing the target SQL server
-- `TARGET_SERVER_NAME` — Fully qualified target SQL server name (e.g. `<name>.database.windows.net`)
-- `TARGET_DATABASE_NAME` — Name of the target database
-- `TARGET_SQL_ADMIN_USER` — SQL admin username for the target server
-- `TARGET_SQL_ADMIN_PASSWORD` — SQL admin password for the target server
+The required fields are the SOURCE_/TARGET_ server, database, credential, and
+storage-account values are provided by user. There are two ways the
+user can supply them — accept either one:
 
-### Storage (for BACPAC transfer)
-- `STORAGE_ACCOUNT_NAME` — Azure Storage account used to stage the BACPAC file
-- `STORAGE_ACCOUNT_KEY` — Access key for the storage account
-- `STORAGE_CONTAINER_NAME` — Blob container name where the BACPAC will be stored
+1. **Pasted directly in the prompt.** The user types or pastes the values
+   (as `KEY=value` lines, a table, prose, or any other reasonably parseable
+   format) straight into the chat message. Ask a follow-up
+   only for fields that are genuinely missing or ambiguous — don't ask them
+   to reformat what they already gave you.
+
+2. **A file to load them from.** The user points you to a file (path, or an
+   uploaded file) that already contains the parameter values — e.g. an
+   exported `.txt`, a notes file, a JSON/YAML config, etc. Read that file
+   yourself and map its contents; don't ask the
+   user to manually reformat it first.
+
+Either way, parsed values should be included in the conversation history, independent if credentials are there.
 
 
-Confirm all variables above are loaded (e.g. `echo $SOURCE_SERVER_NAME`) before proceeding with the migration steps.
-Provided variables are mapped to parameters which will be used in az cli commands shown below.
+## Workflow
 
-## Step 1 — Export `database1` from `sqlserver1` to Blob Storage
+Use parameter values to build and run the actual CLI commands yourself (Azure CLI or PowerShell/Az module — match whatever the user already has on PATH, defaulting to Azure CLI if unclear). Run steps individually so you and the user can sanity-check between them before moving on.
+Output every step in the worklow to the user and explain what is happening as next.
+Provide a brief error message if a command fails, and ask the user to confirm before retrying or moving on.
 
-Use `az sql db export` (Azure CLI) — see `scripts/export-database.sh` for a parameterized version. Minimal shape:
+| Step | What it does | Command to build and run |
+|---|---|---|
+| 1 | Exports the source DB to `<container>/<dbname>-<timestamp>.bacpac` in blob storage. Poll until the export operation succeeds before moving on. | Switch to the source subscription (`az account set --subscription <SOURCE_SUBSCRIPTION>`), then run `az sql db export` against the source server/database with `--storage-key`, `--storage-key-type`, `--storage-uri` pointing at `<container>/<dbname>-<timestamp>.bacpac`, and the source SQL admin `--admin-user`/`--admin-password`. Capture the returned operation/request name and poll it (`az sql db op-list` / repeated `az sql db op-show` or `az storage blob show` on the target blob) until status is `Succeeded` — don't proceed to step 2 while it's still `InProgress`. PowerShell equivalent: `New-AzSqlDatabaseExport`, polled with `Get-AzSqlDatabaseImportExportStatus`. |
+| 2 | Reads the source DB's edition, service objective, max size, and collation, then creates an empty database with matching specs on the target server. | While still on the source subscription, run `az sql db show` on the source database and note `edition`/`currentServiceObjectiveName`/`maxSizeBytes`/`collation`. Switch to the target subscription (`az account set --subscription <TARGET_SUBSCRIPTION>`), then run `az sql db create` on the target server with those same edition, service-objective, max-size, and collation values so the empty database matches the source. PowerShell equivalent: `Get-AzSqlDatabase` then `New-AzSqlDatabase`. |
+| 3 | Imports the BACPAC (schema + all data) into the database created in step 2. Poll until the import succeeds. | Still on the target subscription, run `az sql db import` against the target server/database just created, pointing `--storage-uri` at the same blob written in step 1, with the target SQL admin `--admin-user`/`--admin-password` and the same `--storage-key`/`--storage-key-type`. Poll the returned operation the same way as step 1 until `Succeeded`. PowerShell equivalent: `New-AzSqlDatabaseImport`, polled with `Get-AzSqlDatabaseImportExportStatus`. |
+| 4 (optional) | Recreates SQL-authentication server logins on the target, preserving password (via hash) and SID. See "About logins" below - most users don't need this. | On the source server, connect with `sqlcmd` (or `Invoke-Sqlcmd`) to `master` and query `sys.sql_logins` for the login's `name`, `password_hash`, and `sid`. Build a `CREATE LOGIN [name] WITH PASSWORD = 0x<hash> HASHED, SID = 0x<sid>;` statement per login and run it against `master` on the target server with `sqlcmd`/`Invoke-Sqlcmd`. Confirm with the user (y/N) before executing anything against the target's `master` database — don't skip that confirmation. |Confirm with the user before running step 4 in particular, since it modifies the target server's master database.
 
-```bash
-az sql db export \
-  --resource-group "$SOURCE_RESOURCE_GROUP" \
-  --server "$SOURCE_SERVER_NAME" \
-  --name "$SOURCE_DATABASE_NAME" \
-  --admin-user "$SOURCE_SQL_ADMIN_USER" \
-  --admin-password "$SOURCE_SQL_ADMIN_PASSWORD" \
-  --storage-key-type "StorageAccessKey" \
-  --storage-key "$STORAGE_ACCOUNT_KEY" \
-  --storage-uri "https://$STORAGE_ACCOUNT_NAME.blob.core.windows.net/$STORAGE_CONTAINER_NAME/${SOURCE_DATABASE_NAME}-$(date +%Y%m%d%H%M).bacpac"
-```
+## About logins - read this before promising the user "logins are migrated"
 
-Notes:
-- Output the command to the user before executing. Show all mapped variables used in the command. Show the command itself.
-- This is an async operation. `az sql db export` returns immediately with an operation reference; poll with `az sql db op-list` / `az sql db op-show` (see script) until `state` is `Succeeded`.
-- Use `--auth-type ADPassword` or Entra ID auth instead of SQL admin credentials where possible, and use a SAS token (`--storage-key-type SharedAccessKey`) instead of the raw storage account key where possible — it's scoped and revocable.
-- If using the Azure MCP server tools (`sql`, `storage`) rather than the CLI, use those tools' export/list-operations equivalents instead of shelling out — check available tools first.
-- Name the blob with a timestamp so repeated exports don't silently overwrite each other.
+A `.bacpac` file contains **schema + data + contained database users** — it does
+**not** contain server-level SQL logins, and it does not contain Azure AD logins.
+This is an Azure SQL Database (and BACPAC format) limitation, not a limitation of
+this skill. Concretely:
 
-## Step 2 — Verify the export
+- If the source database uses **contained database users with passwords**
+  (`CREATE USER ... WITH PASSWORD`), those users and their access come across
+  automatically with the BACPAC import in step 3. No extra work needed.
+- If the source database uses **server logins mapped to database users**
+  (`CREATE LOGIN` on master + `CREATE USER ... FOR LOGIN` on the db), the login
+  itself lives outside the database and must be recreated on the target server.
+  That's what step 4 does, for SQL-auth logins, by copying the password hash and
+  SID from `sys.sql_logins` so existing user-to-login mappings keep working.
+- **Azure AD logins** aren't hash-based and can't be scripted this way — recreate
+  them manually on the target with `CREATE LOGIN [user@domain.com] FROM EXTERNAL PROVIDER;`.
 
-Before moving to import:
-- Confirm operation status is `Succeeded` (not just "no error returned" — poll to completion).
-- Confirm the blob exists and has a non-trivial size (`az storage blob show`).
-- Optionally record the blob's size/ETag so you can later confirm the import used the exact file you expect.
+Ask the user which kind of logins they're using if it's not obvious, rather than
+assuming step 4 is needed or unneeded.
 
-## Step 3 — Import the BACPAC to the target database on `sqlserver1`
 
-Use `az sql db import` — see `scripts/import-database.sh`. Minimal shape:
+## Troubleshooting
 
-```bash
-az sql db import \
-  --resource-group "$TARGET_RESOURCE_GROUP" \
-  --server "$TARGET_SERVER_NAME" \
-  --name "$TARGET_DATABASE_NAME" \
-  --admin-user "$TARGET_SQL_ADMIN_USER" \
-  --admin-password "$TARGET_SQL_ADMIN_PASSWORD" \
-  --storage-key-type "StorageAccessKey" \
-  --storage-key "$STORAGE_ACCOUNT_KEY" \
-  --storage-uri "https://$STORAGE_ACCOUNT_NAME.blob.core.windows.net/$STORAGE_CONTAINER_NAME/${TARGET_DATABASE_NAME}-<timestamp>.bacpac" \
-  --edition "$TARGET_EDITION" \
-  --service-objective "$TARGET_SERVICE_OBJECTIVE"
-```
-
-Notes:
-- `az sql db import` **creates a new database** on the target server (it does not import into an existing database in place). Set `--edition`/`--service-objective` to match (or intentionally resize from) the source tier.
-- This is also async — poll to `Succeeded` the same way as the export.
-- If `$TARGET_DB_NAME` equals an existing database name on `sqlserver1`, the command fails; resolve per the Prerequisites clarification (rename/drop the old one, or pick a new target name) before running this step.
-
-## Step 4 — Fix orphaned users / re-link logins on the target
-
-After import completes, connect to the target database and check for orphaned users:
-
-```sql
-EXEC sp_change_users_login 'Report';
-```
-
-- For each orphaned user where a login of the same name already exists on the target server (common when target = source server = `sqlserver1`), re-link with:
-  ```sql
-  ALTER USER [username] WITH LOGIN = [username];
-  ```
-- For users whose login does **not** exist on the target server (common when target is a different server), the login must be created first — for SQL logins use `scripts/export-logins.sql` on the **source** server beforehand to generate re-creatable `CREATE LOGIN` scripts with matching SIDs (via `sp_help_revlogin`), then run the generated script on the target server before re-linking.
-- For Entra ID (Azure AD) users/logins, recreate the Entra ID login/user on the target server/database directly (`CREATE USER [user@domain] FROM EXTERNAL PROVIDER;`) — these aren't covered by `sp_help_revlogin`.
-
-## Step 5 — Validate
-
-- Compare row counts for a handful of key tables between source and target (or run any checksum/row-count script the user already has).
-- Confirm application connection strings/firewall rules point at the correct target server + database name.
-- Confirm `sp_change_users_login 'Report'` returns no remaining orphans.
-- Report the final target database name/server to the user explicitly — especially important if it differs from `database1`/`sqlserver1` due to the same-server naming conflict in Step 3.
-
-## When something fails partway
-
-- If export fails: check `az sql db op-list` for the failure reason (common causes: firewall blocking the export service's IP range, expired/invalid storage key, insufficient permissions on the storage account).
-- If import fails: same op-list check; also check that the target server's firewall allows the "Allow Azure services" rule if the import operation itself needs to reach the server, and that the chosen `--service-objective` is valid for the target region/edition.
-- Never retry a failed export/import silently in a loop without surfacing the error to the user — long-running DB operations can incur cost even when they fail partway.
+- **Export/import "InProgress" for a long time**: normal for larger databases: this is
+  a DTU/vCore-based serverless operation, size and tier affect duration heavily.
+- **Import fails with a collation or edition mismatch**: step 2 mirrors the source's
+  edition/service-objective/collation automatically; if the target server has policy
+  restrictions (e.g. only allows Gen5 vCore), you may need to edit
+  `02-create-target-db.sh` to override the SKU rather than copy it verbatim.
+- **`az sql db import` errors that the database already contains objects**: the
+  target database from step 2 must be empty; don't reuse a database that already
+  has schema in it.

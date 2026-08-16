@@ -26,6 +26,8 @@ namespace Daenet.ClawLib
 
             StringBuilder allResults = new();
 
+            AgentSession taskAgentSession = await taskAgent.CreateSessionAsync();
+
             for (int i = 0; i < steps.Length; i++)
             {
                 var step = steps[i];
@@ -90,7 +92,7 @@ namespace Daenet.ClawLib
                            {step.Instructions}
                            """;
 
-                    AgentSession taskAgentSession = await taskAgent.CreateSessionAsync();
+                   
                     var response = await taskAgent.RunAsync(taskPrompt, taskAgentSession);
                     string result = response.Text ?? "No output.";
 
