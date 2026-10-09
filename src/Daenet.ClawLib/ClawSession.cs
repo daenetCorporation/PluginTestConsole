@@ -89,15 +89,28 @@ namespace Daenet.ClawLib
         /// </list>
         /// </summary>
         public static ClawSession FromEnvironment(List<AITool> tools)
-            => new(
-                apiKey: Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY")
-                                             ?? throw new InvalidOperationException("AZURE_OPENAI_API_KEY is not set."),
-                deploymentChatModel: Environment.GetEnvironmentVariable("AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT") ?? "gpt-5.4", //""claude-sonnet-5",
-                deploymentEmbeddingModel: Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT") ?? "text-embedding-3-small",
-                endpoint: Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
-                                             ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set."),
-                tools: tools
-            );
+        {
+            return new(
+                 apiKey: Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY")
+                                              ?? throw new InvalidOperationException("AZURE_OPENAI_API_KEY is not set."),
+                 deploymentChatModel: Environment.GetEnvironmentVariable("AZURE_OPENAI_CHATCOMPLETION_DEPLOYMENT") ?? "gpt-5.4", //""claude-sonnet-5",
+                 deploymentEmbeddingModel: Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT") ?? "text-embedding-3-small",
+                 endpoint: Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
+                                              ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set."),
+                 tools: tools
+             );
+
+            //  return new(
+            //    apiKey: Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY")
+            //                                 ?? throw new InvalidOperationException("AZURE_OPENAI_API_KEY is not set."),
+            //    deploymentChatModel: "claude-sonnet-5",
+            //    deploymentEmbeddingModel: Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT") ?? "text-embedding-3-small",
+            //    endpoint: "https://ddobric-agent-samples-resource.services.ai.azure.com/anthropic/v1/messages",
+            //    tools: tools
+            //);
+        }
+
+
 
         public IChatClient CreateClient()
         {
